@@ -12,33 +12,56 @@
 using namespace std;
 
 
-// External inputs
-int       NEvents = 100;
-int       Nck = 3;
-int       Vcth = 60; // DAC units, already pedestal-subtracted
-int       HipSuppress = 1; // 0 means don't suppress
-int       DLL = 10;
-int       verbose = 0; // 1: every event, 2: every clock, 3: every ns
-bool      diagnosticHistograms = true; // Make histograms for every event
+// Currently see no reason to modify these once they are set
+const int       NEvents = 100; // Number of events for each RunTest call
+const int       Nck = 4; // Number of clock cycles
+const int       HipSuppress = 1; // 0 means don't suppress
+
+// Knobs that are overwritten when performing scans
+int       Vcth = 20; // DAC units, already pedestal-subtracted
+int       DLL = 10; // DLL delay. If DLL=0, signal pulse starts at t=0. If DLL=10, it starts at 10
+
+// Verbosity etc
+int       verbose = 0; // 0: none, 1: every event, 2: every clock, 3: every ns
+bool      diagnosticHistograms = false; // Make histograms for every event (reduce NEvents to avoid slowing down)
+bool      doVcthScan = true;
+bool      doDLLScan = true;
+bool      do2DScan = true;
+
 
 //////////// Some useful numbers: /////////////////
 // 1 Vcth ~ 130 electrons
 // 1 MIP ~ 2.5 fC
 // Pulse shape peak for 2.5, 5, 7.5, 10 fC is ~ 100, 225, 325, 375 Vcth units 
-// MPV of Landau in beam test ~ 144 Vcth ~ 2.5 fC
+// MPV/width of Landau in beam test ~ 144/9 Vcth 
 ///////////////////////////////////////////////////
 
 
 TF1 * Function_Landau() {
-  // Currently usina a Landau in Vcth units, but could use fC and then scale the PreampShaper output
+  // Currently using a Landau in Vcth units, but could use fC and then scale the PreampShaper output
   TF1* f = new TF1("f", "landau", 0, 300);
-  f->SetParameters(1, 144, 17);
+  f->SetParameters(1, 144, 9);
   return f;
 }
 
+double Function_RC(double *x, double *par) {
+
+  double N = par[0];
+  double tau = par[1];
+  double charge = par[2];
+  
+  double result = 5. * charge / TMath::Gamma(N+1) * TMath::Power( (x[0]/tau), N) * TMath::Exp(-x[0] / tau);
+  if (result < 0) result = 0;
+  return result;
+
+}
+
 TF1 * Function_PulseShape(float charge) {
-  TF1* f = new TF1("f1", "gaus", 0, Nck*25);
-  f->SetParameters(charge, 20, 10);
+  // TF1* f = new TF1("f1", "gaus", 0, Nck*25);
+  // f->SetParameters(charge, 20, 10);
+
+  TF1* f = new TF1("f1", Function_RC, -25, (Nck-1)*25, 3);
+  f->SetParameters(3, 4, charge);  
   return f;
 }
 
@@ -53,13 +76,9 @@ float Step1_PreampShaper( float charge , int time, TF1* f ) {
   // Return mV at each ns (based on parametrized shape)
   // Pulse shape is longer than a clock cycle
   
-  // DLL delay shifts the shape (not sure if forward or backwards)
+  // DLL delay shifts the shape 
   int timeCorr = time - DLL;
   float voltage = 0;
-
-  // Test square shape: 0000011111111111111111111100000
-  // if ( timeCorr > 5 && timeCorr < 50 )
-  //   voltage = charge * 30;
 
   // External function
   voltage = f->Eval(timeCorr);
@@ -102,9 +121,17 @@ bool Step4_HIPSuppress( bool hit , int &countPreviousHits ) {
   else return hit;
 }
 
+void labelAxis(TAxis * a) {
+  a->SetBinLabel(1, "Sampled");
+  a->SetBinLabel(2, "Latched");
+  a->SetBinLabel(3, "OR");
+  a->SetBinLabel(4, "Sampled_HIP");
+  a->SetBinLabel(5, "OR_HIP");
+}
 
 
-TH1D * RunTest (TFile * f, TString dirName) {
+
+vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
 
   f->cd();
   TDirectory * testDir = f->mkdir(dirName);
@@ -113,11 +140,11 @@ TH1D * RunTest (TFile * f, TString dirName) {
 
   // Summary Histograms, per run
   TH1D * h_sumHits = new TH1D("SumHits", "SumHits", 5, 0.5, 5.5);
-  h_sumHits->GetXaxis()->SetBinLabel(1, "Sampled");
-  h_sumHits->GetXaxis()->SetBinLabel(2, "Latched");
-  h_sumHits->GetXaxis()->SetBinLabel(3, "OR");
-  h_sumHits->GetXaxis()->SetBinLabel(4, "Sampled_HIP");
-  h_sumHits->GetXaxis()->SetBinLabel(5, "OR_HIP");
+  labelAxis(h_sumHits->GetXaxis());
+  TH1D * h_sumHitsNextClock = new TH1D("SumHitsNextClock", "SumHitsNextClock", 5, 0.5, 5.5);
+  labelAxis(h_sumHitsNextClock->GetXaxis());
+  TH1D * h_sumHitsInTwoClocks = new TH1D("SumHitsInTwoClocks", "SumHitsInTwoClocks", 5, 0.5, 5.5);
+  labelAxis(h_sumHitsInTwoClocks->GetXaxis());
   gStyle->SetOptStat(0);
 
 
@@ -133,17 +160,21 @@ TH1D * RunTest (TFile * f, TString dirName) {
     TH1D* h_pulse;
     TH1D* h_comp;
     TH1D* h_hits;
+    TH1D* h_hitsNextClock;
 
 
     if (diagnosticHistograms) {
       eventDir = testDir->mkdir( Form("Event%i", ievent) );
       eventDir->cd();
-      h_pulse = new TH1D("PulseShape", "PulseShape", Nck*25, 0, Nck*25);
-      h_pulse->GetXaxis()->SetNdivisions(3, kFALSE);
+      h_pulse = new TH1D("PulseShape", "PulseShape", Nck*25, -25, (Nck-1)*25);
+      h_pulse->GetXaxis()->SetNdivisions(4, kFALSE);
       h_comp  = (TH1D*) h_pulse->Clone();
       h_comp->SetNameTitle("Comparator", "Comparator");
       h_hits = (TH1D*) h_sumHits->Clone();
+      h_hits->Reset();
       h_hits->SetNameTitle("Hits", "Hits");
+      h_hitsNextClock = (TH1D*) h_hits->Clone();
+      h_hitsNextClock->SetNameTitle("HitsNextClock", "HitsNextClock");
     }
 
     float charge = Step0_GetCharge(landau); 
@@ -170,7 +201,7 @@ TH1D * RunTest (TFile * f, TString dirName) {
 
 
     // Loop over clock cycles
-    for (int ick = 0; ick < Nck; ick++) {
+    for (int ick = -1; ick < Nck; ick++) {
 
       if (verbose>=2) cout<<"Clock cycle "<<ick<<endl;
 
@@ -182,17 +213,20 @@ TH1D * RunTest (TFile * f, TString dirName) {
       // Loop inside a clock cycle
       for (int ins = 0; ins <= 24; ins++) {
 
-        float voltage = Step1_PreampShaper( charge, ins + ick*25, shape );
+        int coarsePlusFineTime = ins + ick*25;
+
+        float voltage = Step1_PreampShaper( charge, coarsePlusFineTime, shape );
         bool comp = Step2_Comparator( voltage, Vcth );
 
         if ( !foundSampledHitThisClock ) foundSampledHitThisClock = Step3_HitDetectSampled( comp, ins );
         if ( !foundLatchedHitNextClock ) foundLatchedHitNextClock = Step3_HitDetectLatched( comp, ins, comparatorOutputPreviousNanosecond );
 
-        if (verbose>=3) cout << ins << " \t " << voltage << "\t\t" << comp << endl;
+        if (verbose>=3) cout << coarsePlusFineTime << " \t " << voltage << "\t\t" << comp << endl;
 
         if (diagnosticHistograms) {
-          h_pulse->SetBinContent(ins+ick*25, voltage);
-          h_comp->SetBinContent(ins+ick*25, comp*100); // arbitrary scaling just for easier overlay
+          int timeBin = h_pulse->GetXaxis()->FindBin(coarsePlusFineTime);
+          h_pulse->SetBinContent(timeBin, voltage);
+          h_comp->SetBinContent(timeBin, comp*Vcth); 
         }
 
         comparatorOutputPreviousNanosecond = comp;
@@ -208,14 +242,49 @@ TH1D * RunTest (TFile * f, TString dirName) {
       HIPcountOR      = foundORHit                ? HIPcountOR+1      : 0;
 
       // Hit counters
-      if (foundSampledHitThisClock)  { countSampledHits++;    h_sumHits->Fill(1); if (diagnosticHistograms) h_hits->Fill(1); }
-      if (foundLatchedHitThisClock)  { countLatchedHits++;    h_sumHits->Fill(2); if (diagnosticHistograms) h_hits->Fill(2); } 
-      if (foundORHit)                { countORHits++;         h_sumHits->Fill(3); if (diagnosticHistograms) h_hits->Fill(3); }   
-      if (foundSampledHitHIP)        { countSampledHIPHits++; h_sumHits->Fill(4); if (diagnosticHistograms) h_hits->Fill(4); }   
-      if (foundORHitHIP)             { countORHIPHits++;      h_sumHits->Fill(5); if (diagnosticHistograms) h_hits->Fill(5); } 
+      if (ick == 2) { // "In time" hits (arbitrarily decide that I want hit to be detected in 2nd bunch crossing)
+        if (foundSampledHitThisClock)  { countSampledHits++;    h_sumHits->Fill(1); if (diagnosticHistograms) h_hits->Fill(1); }
+        if (foundLatchedHitThisClock)  { countLatchedHits++;    h_sumHits->Fill(2); if (diagnosticHistograms) h_hits->Fill(2); } 
+        if (foundORHit)                { countORHits++;         h_sumHits->Fill(3); if (diagnosticHistograms) h_hits->Fill(3); }   
+        if (foundSampledHitHIP)        { countSampledHIPHits++; h_sumHits->Fill(4); if (diagnosticHistograms) h_hits->Fill(4); }   
+        if (foundORHitHIP)             { countORHIPHits++;      h_sumHits->Fill(5); if (diagnosticHistograms) h_hits->Fill(5); } 
 
-      if (verbose>=2) cout<<"Sampled\tLatched\tOR   SampledHIP\tORHIP  [LatchedNextCock]"<<endl;
-      if (verbose>=2) cout<<foundSampledHitThisClock<<" \t "<<foundLatchedHitThisClock<<" \t "<<foundORHit<<" \t "<<foundSampledHitHIP<<" \t "<<foundORHitHIP<<" \t "<<foundLatchedHitNextClock << endl;
+        if (verbose>=2) cout<<"Sampled\tLatched\tOR   SampledHIP\tORHIP  [LatchedNextCock]"<<endl;
+        if (verbose>=2) cout<<foundSampledHitThisClock<<" \t "<<foundLatchedHitThisClock<<" \t "<<foundORHit<<" \t "<<foundSampledHitHIP<<" \t "<<foundORHitHIP<<" \t "<<foundLatchedHitNextClock << endl;
+      }
+
+      if (ick == 3) { // Late and Double hits
+
+        if (foundSampledHitThisClock)  {  
+          h_sumHitsNextClock->Fill(1); 
+          if (diagnosticHistograms) h_hitsNextClock->Fill(1); 
+          if (countSampledHits>0)     h_sumHitsInTwoClocks->Fill(1);
+        }
+        if (foundLatchedHitThisClock)  {  
+          h_sumHitsNextClock->Fill(2); 
+          if (diagnosticHistograms) h_hitsNextClock->Fill(2); 
+          if (countLatchedHits>0)     h_sumHitsInTwoClocks->Fill(2);
+        } 
+        if (foundORHit)                {  
+          h_sumHitsNextClock->Fill(3); 
+          if (diagnosticHistograms) h_hitsNextClock->Fill(3); 
+          if (countORHits>0)          h_sumHitsInTwoClocks->Fill(3);
+        }   
+        if (foundSampledHitHIP)        {  
+          h_sumHitsNextClock->Fill(4); 
+          if (diagnosticHistograms) h_hitsNextClock->Fill(4); 
+          if (countSampledHIPHits>0)  h_sumHitsInTwoClocks->Fill(4);
+        }   
+        if (foundORHitHIP)             {  
+          h_sumHitsNextClock->Fill(5); 
+          if (diagnosticHistograms) h_hitsNextClock->Fill(5); 
+          if (countORHIPHits>0)       h_sumHitsInTwoClocks->Fill(5);
+        } 
+
+
+      }
+
+
 
     } // End of clock
 
@@ -227,6 +296,7 @@ TH1D * RunTest (TFile * f, TString dirName) {
       h_pulse->Write();
       h_comp->Write();
       h_hits->Write();
+      h_hitsNextClock->Write();
     }
 
   } // End of event
@@ -235,9 +305,22 @@ TH1D * RunTest (TFile * f, TString dirName) {
   testDir->cd();
   h_sumHits->Scale(1./NEvents);
   h_sumHits->GetYaxis()->SetRangeUser(0, h_sumHits->GetMaximum()*1.3);
+  h_sumHitsNextClock->Scale(1./NEvents);
+  h_sumHitsNextClock->GetYaxis()->SetRangeUser(0, h_sumHitsNextClock->GetMaximum()*1.3);
+  h_sumHitsInTwoClocks->Scale(1./NEvents);
+  h_sumHitsInTwoClocks->GetYaxis()->SetRangeUser(0, h_sumHitsInTwoClocks->GetMaximum()*1.3);
+ 
 //  h_sumHits->Draw();
   h_sumHits->Write();
-  return h_sumHits;
+  h_sumHitsNextClock->Write();
+  h_sumHitsInTwoClocks->Write();
+
+  vector<TH1D*> v_h_sumHits;
+  v_h_sumHits.push_back(h_sumHits);
+  v_h_sumHits.push_back(h_sumHitsNextClock);
+  v_h_sumHits.push_back(h_sumHitsInTwoClocks);
+
+  return v_h_sumHits;
 
 } // End of RunTest
 
@@ -249,35 +332,118 @@ void CBC3sim () {
   f->cd();
 
   // Threshold scan
-  float vcthStart = 60;
-  float vcthRange = 100;
-  float vcthStep = 5;
+  TDirectory * VcthDir = f->mkdir("ThresholdScan");
+  VcthDir->cd();
+  DLL = 10;
+  float vcthStart = 20;
+  float vcthRange = 160;
+  float vcthStep = 2;
   TH2D * h_vcthScan = new TH2D(Form("ThresholdScan_DLL%i", DLL), "ThresholdScan", (int) vcthRange/vcthStep, vcthStart, vcthStart+vcthRange, 5, 0.5, 5.5);
-  for (int i = 0; i <= vcthRange; i += vcthStep) {
-    Vcth = vcthStart + i;
-    TH1D* h_test = RunTest(f, Form("Vcth_%i", Vcth));
-    for (int ibin = 1; ibin <= 5; ibin++ ) {
-      h_vcthScan->SetBinContent(h_vcthScan->GetXaxis()->FindBin(Vcth+0.01), ibin, h_test->GetBinContent(ibin));
+  labelAxis(h_vcthScan->GetYaxis());
+  TH2D * h_vcthScanDoubleHits = (TH2D*) h_vcthScan->Clone();
+  h_vcthScanDoubleHits->SetNameTitle(Form("ThresholdScanDoubleHits_DLL%i", DLL), "ThresholdScanDoubleHits");
+  if (doVcthScan) {
+    for (int i = 0; i <= vcthRange; i += vcthStep) {
+      Vcth = vcthStart + i;
+      vector<TH1D*> v_h_test = RunTest(VcthDir, Form("Vcth_%i", Vcth));
+      int vcthBin = h_vcthScan->GetXaxis()->FindBin(Vcth+0.01);
+      for (int ibin = 1; ibin <= 5; ibin++ ) {
+        h_vcthScan->SetBinContent(vcthBin, ibin, v_h_test.at(0)->GetBinContent(ibin));
+        h_vcthScanDoubleHits->SetBinContent(vcthBin, ibin, v_h_test.at(2)->GetBinContent(ibin));
+      }
     }
   }
 
   // Timing scan
-  Vcth = 60; // Reset Vcth to nominal
-  float DLLStart = 0;
-  float DLLRange = 25;
+  TDirectory * DLLDir = f->mkdir("TimingScan");
+  DLLDir->cd();
+  Vcth = 20; // Reset Vcth to nominal
+  float DLLStart = -25;
+  float DLLRange = 100;
   float DLLStep = 1;
   TH2D * h_dllScan = new TH2D(Form("DLLScan_Vcth%i", Vcth), "DLLScan", (int) DLLRange/DLLStep, DLLStart, DLLStart+DLLRange, 5, 0.5, 5.5);
-  for (int i = 0; i <= DLLRange; i += DLLStep) {
-    DLL = DLLStart + i;
-    TH1D* h_test = RunTest(f, Form("DLL_%i", DLL));
-    for (int ibin = 1; ibin <= 5; ibin++ ) {
-      h_dllScan->SetBinContent(h_dllScan->GetXaxis()->FindBin(DLL+0.01), ibin, h_test->GetBinContent(ibin));
+  labelAxis(h_dllScan->GetYaxis());
+  TH2D * h_dllScanNextClock = (TH2D*) h_dllScan->Clone();
+  TH2D * h_dllScanDoubleHits = (TH2D*) h_dllScan->Clone();
+  h_dllScanNextClock->SetNameTitle(Form("DLLScanNextClock_Vcth%i", Vcth), "DLLScanNextClock");
+  h_dllScanDoubleHits->SetNameTitle(Form("DLLScanDoubleHits_Vcth%i", Vcth), "DLLScanDoubleHits");
+  if (doDLLScan) {
+    for (int i = 0; i <= DLLRange; i += DLLStep) {
+      DLL = DLLStart + i;
+      vector<TH1D*> v_h_test = RunTest(DLLDir, Form("DLL_%i", DLL));
+      int DLLbin = h_dllScan->GetXaxis()->FindBin(DLL+0.01);
+      for (int ibin = 1; ibin <= 5; ibin++ ) {
+        h_dllScan->SetBinContent(DLLbin, ibin, v_h_test.at(0)->GetBinContent(ibin));
+        h_dllScanNextClock->SetBinContent(DLLbin, ibin, v_h_test.at(1)->GetBinContent(ibin));
+        h_dllScanDoubleHits->SetBinContent(DLLbin, ibin, v_h_test.at(2)->GetBinContent(ibin));
+      }
     }
   }
 
+
+  // 2D scan
+  TDirectory * TwoDDir = f->mkdir("2DScan");
+  TwoDDir->cd();
+  vcthStart = 20;
+  vcthRange = 160;
+  vcthStep = 5;
+  DLLStart = -25;
+  DLLRange = 50;
+  DLLStep = 1;
+  TH2D * h_2DScanSampled = new TH2D("2DScanSampled", "2DScanSampled", (int) DLLRange/DLLStep, DLLStart, DLLStart+DLLRange, (int) vcthRange/vcthStep, vcthStart, vcthStart+vcthRange);
+  TH2D * h_2DScanLatched = (TH2D*) h_2DScanSampled->Clone(); h_2DScanLatched->SetNameTitle("2DScanLatched", "2DScanLatched");
+  TH2D * h_2DScanOR = (TH2D*) h_2DScanSampled->Clone(); h_2DScanOR->SetNameTitle("2DScanOR", "2DScanOR");
+  TH2D * h_2DScanSampledHIP = (TH2D*) h_2DScanSampled->Clone(); h_2DScanSampledHIP->SetNameTitle("2DScanSampledHIP", "2DScanSampledHIP");
+  TH2D * h_2DScanORHIP = (TH2D*) h_2DScanSampled->Clone(); h_2DScanORHIP->SetNameTitle("2DScanORHIP", "2DScanORHIP");
+  TH2D * h_2DScanSampledDoubleHits = (TH2D*) h_2DScanSampled->Clone(); h_2DScanSampledDoubleHits->SetNameTitle("2DScanSampledDoubleHits", "2DScanSampledDoubleHits");
+  TH2D * h_2DScanLatchedDoubleHits = (TH2D*) h_2DScanSampled->Clone(); h_2DScanLatchedDoubleHits->SetNameTitle("2DScanLatchedDoubleHits", "2DScanLatchedDoubleHits");
+  TH2D * h_2DScanORDoubleHits = (TH2D*) h_2DScanSampled->Clone(); h_2DScanORDoubleHits->SetNameTitle("2DScanORDoubleHits", "2DScanORDoubleHits");
+  TH2D * h_2DScanSampledHIPDoubleHits = (TH2D*) h_2DScanSampled->Clone(); h_2DScanSampledHIPDoubleHits->SetNameTitle("2DScanSampledHIPDoubleHits", "2DScanSampledHIPDoubleHits");
+  TH2D * h_2DScanORHIPDoubleHits = (TH2D*) h_2DScanSampled->Clone(); h_2DScanORHIPDoubleHits->SetNameTitle("2DScanORHIPDoubleHits", "2DScanORHIPDoubleHits");
+  if (do2DScan) {
+    for (int i = 0; i <= vcthRange; i += vcthStep) {
+      for (int j = 0; j <= DLLRange; j += DLLStep) {
+        Vcth = vcthStart + i;
+        DLL = DLLStart + j;
+        vector<TH1D*> v_h_test = RunTest(TwoDDir, Form("Vcth%i_DLL%i", Vcth, DLL));
+        int vcthBin = h_2DScanSampled->GetYaxis()->FindBin(Vcth+0.01);
+        int DLLbin = h_2DScanSampled->GetXaxis()->FindBin(DLL+0.01);
+        // cout<<"Ran with DLL "<<DLL<<" and Vcth "<<Vcth<<". Filling 2D scan "<<DLLbin<<" "<<vcthBin<<" with value "<<v_h_test.at(0)->GetBinContent(0)<<endl;
+        h_2DScanSampled->SetBinContent(             DLLbin, vcthBin, v_h_test.at(0)->GetBinContent(1));
+        h_2DScanLatched->SetBinContent(             DLLbin, vcthBin, v_h_test.at(0)->GetBinContent(2));
+        h_2DScanOR->SetBinContent(                  DLLbin, vcthBin, v_h_test.at(0)->GetBinContent(3));
+        h_2DScanSampledHIP->SetBinContent(          DLLbin, vcthBin, v_h_test.at(0)->GetBinContent(4));
+        h_2DScanORHIP->SetBinContent(               DLLbin, vcthBin, v_h_test.at(0)->GetBinContent(5));
+        h_2DScanSampledDoubleHits->SetBinContent(   DLLbin, vcthBin, v_h_test.at(2)->GetBinContent(1));
+        h_2DScanLatchedDoubleHits->SetBinContent(   DLLbin, vcthBin, v_h_test.at(2)->GetBinContent(2));
+        h_2DScanORDoubleHits->SetBinContent(        DLLbin, vcthBin, v_h_test.at(2)->GetBinContent(3));
+        h_2DScanSampledHIPDoubleHits->SetBinContent(DLLbin, vcthBin, v_h_test.at(2)->GetBinContent(4));
+        h_2DScanORHIPDoubleHits->SetBinContent(     DLLbin, vcthBin, v_h_test.at(2)->GetBinContent(5));
+      }
+    }
+  }
+
+
+
+
+
+
   f->cd();
   h_vcthScan->Write();
+  h_vcthScanDoubleHits->Write();
   h_dllScan->Write();
+  h_dllScanNextClock->Write();
+  h_dllScanDoubleHits->Write();
+  h_2DScanSampled->Write();
+  h_2DScanLatched->Write();
+  h_2DScanOR->Write();
+  h_2DScanSampledHIP->Write();
+  h_2DScanORHIP->Write();
+  h_2DScanSampledDoubleHits->Write();
+  h_2DScanLatchedDoubleHits->Write();
+  h_2DScanORDoubleHits->Write();
+  h_2DScanSampledHIPDoubleHits->Write();
+  h_2DScanORHIPDoubleHits->Write();
 
 }
 
