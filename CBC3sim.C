@@ -48,9 +48,9 @@ double Function_RC(double *x, double *par) {
 
   double N = par[0];
   double tau = par[1];
-  double charge = par[2];
+  double norm = par[2];
   
-  double result = 5. * charge / TMath::Gamma(N+1) * TMath::Power( (x[0]/tau), N) * TMath::Exp(-x[0] / tau);
+  double result =  norm / TMath::Gamma(N+1) * TMath::Power( (x[0]/tau), N) * TMath::Exp(-x[0] / tau);
   if (result < 0) result = 0;
   return result;
 
@@ -61,7 +61,13 @@ TF1 * Function_PulseShape(float charge) {
   // f->SetParameters(charge, 20, 10);
 
   TF1* f = new TF1("f1", Function_RC, -25, (Nck-1)*25, 3);
-  f->SetParameters(3, 4, charge);  
+  f->SetParameters(3, 4, 1);
+
+  // Normalize so that peak matches "charge". This way if we draw "140" from the Landau distribution,
+  // we will have a PulseShape that has a maximum value of 140
+  double max = f->GetMaximum(0, 1000);
+  f->SetParameters(3, 4, charge/max);
+
   return f;
 }
 
@@ -72,7 +78,7 @@ float Step0_GetCharge( TF1* f) {
   return charge; 
 }
 
-float Step1_PreampShaper( float charge , int time, TF1* f ) {
+float Step1_PreampShaper( int time, TF1* f ) {
   // Return mV at each ns (based on parametrized shape)
   // Pulse shape is longer than a clock cycle
   
@@ -82,6 +88,20 @@ float Step1_PreampShaper( float charge , int time, TF1* f ) {
 
   // External function
   voltage = f->Eval(timeCorr);
+
+  return voltage;
+}
+
+float Step1_PreampShaperDoubleHit( int time, TF1* f, TF1* f2 ) {
+  // Return mV at each ns (based on parametrized shape)
+  // Pulse shape is longer than a clock cycle
+  
+  // DLL delay shifts the shape 
+  int timeCorr = time - DLL;
+  float voltage = 0;
+
+  // External function
+  voltage = TMath::Max( f->Eval(timeCorr), f2->Eval(timeCorr-25));
 
   return voltage;
 }
@@ -178,9 +198,11 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
     }
 
     float charge = Step0_GetCharge(landau); 
+    float charge2 = Step0_GetCharge(landau); 
 
     // Pulse shape function defined right after charge is known
-    TF1 * shape = Function_PulseShape(charge);
+    TF1 * shape  = Function_PulseShape(charge);
+    TF1 * shape2 = Function_PulseShape(charge2);
 
     // Internal counters
     bool comparatorOutputPreviousNanosecond = false;
@@ -215,7 +237,9 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
 
         int coarsePlusFineTime = ins + ick*25;
 
-        float voltage = Step1_PreampShaper( charge, coarsePlusFineTime, shape );
+        float voltage = Step1_PreampShaper( coarsePlusFineTime, shape );
+        float voltageDoubleHit = Step1_PreampShaperDoubleHit( coarsePlusFineTime, shape, shape2 );
+        //voltage = voltageDoubleHit;
         bool comp = Step2_Comparator( voltage, Vcth );
 
         if ( !foundSampledHitThisClock ) foundSampledHitThisClock = Step3_HitDetectSampled( comp, ins );
@@ -242,7 +266,7 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
       HIPcountOR      = foundORHit                ? HIPcountOR+1      : 0;
 
       // Hit counters
-      if (ick == 2) { // "In time" hits (arbitrarily decide that I want hit to be detected in 2nd bunch crossing)
+      if (ick == 1) { // "In time" hits (arbitrarily decide that I want hit to be detected in 2nd bunch crossing)
         if (foundSampledHitThisClock)  { countSampledHits++;    h_sumHits->Fill(1); if (diagnosticHistograms) h_hits->Fill(1); }
         if (foundLatchedHitThisClock)  { countLatchedHits++;    h_sumHits->Fill(2); if (diagnosticHistograms) h_hits->Fill(2); } 
         if (foundORHit)                { countORHits++;         h_sumHits->Fill(3); if (diagnosticHistograms) h_hits->Fill(3); }   
@@ -253,7 +277,7 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
         if (verbose>=2) cout<<foundSampledHitThisClock<<" \t "<<foundLatchedHitThisClock<<" \t "<<foundORHit<<" \t "<<foundSampledHitHIP<<" \t "<<foundORHitHIP<<" \t "<<foundLatchedHitNextClock << endl;
       }
 
-      if (ick == 3) { // Late and Double hits
+      if (ick == 2) { // Late and Double hits
 
         if (foundSampledHitThisClock)  {  
           h_sumHitsNextClock->Fill(1); 
@@ -332,19 +356,21 @@ void CBC3sim () {
   f->cd();
 
   // Threshold scan
-  TDirectory * VcthDir = f->mkdir("ThresholdScan");
+  DLL = 15;
+  TDirectory * VcthDir = f->mkdir(Form("ThresholdScan_DLL%i", DLL));
   VcthDir->cd();
-  DLL = 10;
   float vcthStart = 20;
-  float vcthRange = 160;
+  float vcthRange = 180;
   float vcthStep = 2;
   TH2D * h_vcthScan = new TH2D(Form("ThresholdScan_DLL%i", DLL), "ThresholdScan", (int) vcthRange/vcthStep, vcthStart, vcthStart+vcthRange, 5, 0.5, 5.5);
   labelAxis(h_vcthScan->GetYaxis());
   TH2D * h_vcthScanDoubleHits = (TH2D*) h_vcthScan->Clone();
   h_vcthScanDoubleHits->SetNameTitle(Form("ThresholdScanDoubleHits_DLL%i", DLL), "ThresholdScanDoubleHits");
   if (doVcthScan) {
+    cout<<"Vcth scan: "<<flush;
     for (int i = 0; i <= vcthRange; i += vcthStep) {
       Vcth = vcthStart + i;
+      cout<<Vcth<<" "<<flush;
       vector<TH1D*> v_h_test = RunTest(VcthDir, Form("Vcth_%i", Vcth));
       int vcthBin = h_vcthScan->GetXaxis()->FindBin(Vcth+0.01);
       for (int ibin = 1; ibin <= 5; ibin++ ) {
@@ -352,12 +378,13 @@ void CBC3sim () {
         h_vcthScanDoubleHits->SetBinContent(vcthBin, ibin, v_h_test.at(2)->GetBinContent(ibin));
       }
     }
+    cout<<endl;
   }
 
   // Timing scan
-  TDirectory * DLLDir = f->mkdir("TimingScan");
-  DLLDir->cd();
   Vcth = 20; // Reset Vcth to nominal
+  TDirectory * DLLDir = f->mkdir(Form("DLLScan_Vcth%i", Vcth));
+  DLLDir->cd();
   float DLLStart = -25;
   float DLLRange = 100;
   float DLLStep = 1;
@@ -368,8 +395,10 @@ void CBC3sim () {
   h_dllScanNextClock->SetNameTitle(Form("DLLScanNextClock_Vcth%i", Vcth), "DLLScanNextClock");
   h_dllScanDoubleHits->SetNameTitle(Form("DLLScanDoubleHits_Vcth%i", Vcth), "DLLScanDoubleHits");
   if (doDLLScan) {
+    cout<<"DLL scan: "<<flush;
     for (int i = 0; i <= DLLRange; i += DLLStep) {
       DLL = DLLStart + i;
+      cout<<DLL<<" "<<flush;
       vector<TH1D*> v_h_test = RunTest(DLLDir, Form("DLL_%i", DLL));
       int DLLbin = h_dllScan->GetXaxis()->FindBin(DLL+0.01);
       for (int ibin = 1; ibin <= 5; ibin++ ) {
@@ -378,6 +407,7 @@ void CBC3sim () {
         h_dllScanDoubleHits->SetBinContent(DLLbin, ibin, v_h_test.at(2)->GetBinContent(ibin));
       }
     }
+    cout<<endl;
   }
 
 
@@ -401,10 +431,12 @@ void CBC3sim () {
   TH2D * h_2DScanSampledHIPDoubleHits = (TH2D*) h_2DScanSampled->Clone(); h_2DScanSampledHIPDoubleHits->SetNameTitle("2DScanSampledHIPDoubleHits", "2DScanSampledHIPDoubleHits");
   TH2D * h_2DScanORHIPDoubleHits = (TH2D*) h_2DScanSampled->Clone(); h_2DScanORHIPDoubleHits->SetNameTitle("2DScanORHIPDoubleHits", "2DScanORHIPDoubleHits");
   if (do2DScan) {
+    cout<<"2D scan: "<<flush;
     for (int i = 0; i <= vcthRange; i += vcthStep) {
       for (int j = 0; j <= DLLRange; j += DLLStep) {
         Vcth = vcthStart + i;
         DLL = DLLStart + j;
+        cout<<Vcth<<"/"<<DLL<<" "<<flush;
         vector<TH1D*> v_h_test = RunTest(TwoDDir, Form("Vcth%i_DLL%i", Vcth, DLL));
         int vcthBin = h_2DScanSampled->GetYaxis()->FindBin(Vcth+0.01);
         int DLLbin = h_2DScanSampled->GetXaxis()->FindBin(DLL+0.01);
@@ -421,6 +453,7 @@ void CBC3sim () {
         h_2DScanORHIPDoubleHits->SetBinContent(     DLLbin, vcthBin, v_h_test.at(2)->GetBinContent(5));
       }
     }
+    cout<<endl;
   }
 
 
