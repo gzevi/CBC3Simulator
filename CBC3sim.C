@@ -1,19 +1,20 @@
 #include <iostream>
-#include <TFile.h>
-#include <TH1.h>
-#include <TAxis.h>
-#include <TCanvas.h>
-#include <TLegend.h>
-#include <TRandom3.h>
-#include "TStyle.h"
 #include "TMath.h"
-#include <TString.h>
+#include "TF1.h"
+#include "TFile.h"
+#include "TString.h"
+#include "TStyle.h"
+#include "TCanvas.h"
+#include "TH1.h"
+#include "TH2.h"
+#include "TAxis.h"
+#include "TLegend.h"
+#include "TRandom3.h"
 
 using namespace std;
 
-
 // Currently see no reason to modify these once they are set
-const int       NEvents = 100; // Number of events for each RunTest call
+const int       NEvents = 1000; // Number of events for each RunTest call
 const int       Nck = 4; // Number of clock cycles
 const int       HipSuppress = 1; // 0 means don't suppress
 
@@ -28,7 +29,6 @@ bool      doVcthScan = true;
 bool      doDLLScan = true;
 bool      do2DScan = true;
 
-
 //////////// Some useful numbers: /////////////////
 // 1 Vcth ~ 130 electrons
 // 1 MIP ~ 2.5 fC
@@ -36,11 +36,77 @@ bool      do2DScan = true;
 // MPV/width of Landau in beam test ~ 144/9 Vcth 
 ///////////////////////////////////////////////////
 
-
 TF1 * Function_Landau() {
   // Currently using a Landau in Vcth units, but could use fC and then scale the PreampShaper output
   TF1* f = new TF1("f", "landau", 0, 300);
   f->SetParameters(1, 144, 9);
+  return f;
+}
+
+double Double_LanGaus(double *x, double *par) {
+
+  // Fit parameters:
+  // par[0] = Width (scale) parameter of Landau density
+  // par[1] = Most Probable Value parameter of Landau density  
+  // par[2] = Total area (integral -inf to inf, normalization constant)
+  // par[3] = Width (sigma) of convoluted Gaussian function
+
+  //In the Landau distribution (represented by the CERNLIB approximation),
+  //the maximum is located at x=-0.22278298 with the location parameter=0.
+  //This shift is corrected within this function, so that the actual
+  //maximum is identical to the MP parameter.
+
+  // Numeric constants
+  double invSqrd2pi = 0.3989422804014;   // (2 pi)^(-1/2)
+  double mpshift    = -0.22278298;       // Landau maximum location
+
+  // Control constants
+  double nCsteps     = 100.0;      // number of convolution steps
+  double sigmasGauss =   5.0;      // convolution extends to +-sc Gaussian sigmas
+
+  // Variables
+  double xx;
+  double mpc;
+  double fLandau;
+  double sum = 0.0;
+  double step;
+
+  // MP shift correction
+  mpc = par[1] - mpshift * par[0];
+
+  // Range of convolution integral
+  double xlow = x[0] - sigmasGauss * par[3];
+  double xupp = x[0] + sigmasGauss * par[3];
+
+  step = (xupp-xlow) / nCsteps;
+
+  // Convolution integral of Landau and Gaussian by sum
+  for(double i = 1.0; i <= nCsteps/2; i++) {
+
+    xx = xlow + (i-.5) * step;
+    fLandau = TMath::Landau(xx, mpc, par[0]) / par[0];
+    sum += fLandau * TMath::Gaus(x[0], xx, par[3]);
+
+    xx = xupp - (i-.5) * step;
+    fLandau = TMath::Landau(xx, mpc, par[0]) / par[0];
+    sum += fLandau * TMath::Gaus(x[0], xx, par[3]);
+
+  }
+
+  return (par[2] * step * sum * invSqrd2pi / par[3]);
+
+}
+
+TF1 * Function_LanGaus() {
+  // Currently using a Landau in Vcth units, but could use fC and then scale the PreampShaper output
+  TF1* f = new TF1("f", "Double_LanGaus", 0, 300, 4);
+  // Initial parameter values to be checked!
+  // I set Landau "width" to 9 (is this the same as sigma?)
+  // MVP is 144
+  // Total area of the convolution is 1 for now, this is a normalization factor
+  // Sigma of the gaussian is 6 (CBC3 noise is 6 Vcth units??? To be checked!!!)
+  f->SetParameters(9, 144, 1, 6);
+  f->SetParNames("Width","MP","Area","GSigma");
   return f;
 }
 
@@ -120,7 +186,6 @@ bool Step3_HitDetectSampled( bool comp , int time ) {
   else return comp;
 } 
 
-
 bool Step3_HitDetectLatched( bool comp , int time, bool compMinusOneNs ) {
   // Also called "Fixed Width"
   // [CBC3 Manual] The output from the Hit comparator is latched for a full 25ns clock period. Non-synchronous comparator output transitions are captured. The output is a fixed 25ns pulse, regardless of the width of the comparator output pulse. Hits following immediately one after another in subsequent clock cycles will be captured provided the channel returns below the comparator threshold for each hit.
@@ -132,7 +197,6 @@ bool Step3_HitDetectLatched( bool comp , int time, bool compMinusOneNs ) {
   if ( comp && !compMinusOneNs ) return true;
   else return false;
 }
-
 
 bool Step4_HIPSuppress( bool hit , int &countPreviousHits ) {
   if ( countPreviousHits >= HipSuppress ) {
@@ -149,14 +213,11 @@ void labelAxis(TAxis * a) {
   a->SetBinLabel(5, "OR_HIP");
 }
 
-
-
 vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
 
   f->cd();
   TDirectory * testDir = f->mkdir(dirName);
   testDir->cd();
-
 
   // Summary Histograms, per run
   TH1D * h_sumHits = new TH1D("SumHits", "SumHits", 5, 0.5, 5.5);
@@ -167,13 +228,12 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
   labelAxis(h_sumHitsInTwoClocks->GetXaxis());
   gStyle->SetOptStat(0);
 
-
-  TF1 * landau = Function_Landau();
+  //TF1 * landau = Function_Landau();
+  TF1 * landau = Function_LanGaus(); // This is the convolution!
 
   // Event looper
   for (int ievent = 0; ievent < NEvents; ievent++) {
     if (verbose>=1) cout<<"New Event"<<endl;
-
 
     // Diagnostic histograms, per event
     TDirectory * eventDir;
@@ -181,7 +241,6 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
     TH1D* h_comp;
     TH1D* h_hits;
     TH1D* h_hitsNextClock;
-
 
     if (diagnosticHistograms) {
       eventDir = testDir->mkdir( Form("Event%i", ievent) );
@@ -221,7 +280,6 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
     int countSampledHIPHits = 0;
     int countORHIPHits = 0;
 
-
     // Loop over clock cycles
     for (int ick = -1; ick < Nck; ick++) {
 
@@ -259,7 +317,6 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
       bool foundORHit = ( foundLatchedHitThisClock || foundSampledHitThisClock );
       bool foundSampledHitHIP = Step4_HIPSuppress( foundSampledHitThisClock, HIPcountSampled );
       bool foundORHitHIP      = Step4_HIPSuppress( foundORHit, HIPcountOR );
-
 
       // HIP counters
       HIPcountSampled = foundSampledHitThisClock  ? HIPcountSampled+1 : 0;
@@ -305,10 +362,7 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
           if (countORHIPHits>0)       h_sumHitsInTwoClocks->Fill(5);
         } 
 
-
       }
-
-
 
     } // End of clock
 
@@ -324,7 +378,6 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
     }
 
   } // End of event
-
 
   testDir->cd();
   h_sumHits->Scale(1./NEvents);
@@ -348,9 +401,7 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
 
 } // End of RunTest
 
-
 void CBC3sim () {
-
 
   TFile * f = new TFile("TestSim.root", "RECREATE");
   f->cd();
@@ -410,16 +461,17 @@ void CBC3sim () {
     cout<<endl;
   }
 
-
   // 2D scan
   TDirectory * TwoDDir = f->mkdir("2DScan");
   TwoDDir->cd();
+
   vcthStart = 20;
   vcthRange = 160;
   vcthStep = 5;
   DLLStart = -25;
   DLLRange = 50;
   DLLStep = 1;
+
   TH2D * h_2DScanSampled = new TH2D("2DScanSampled", "2DScanSampled", (int) DLLRange/DLLStep, DLLStart, DLLStart+DLLRange, (int) vcthRange/vcthStep, vcthStart, vcthStart+vcthRange);
   TH2D * h_2DScanLatched = (TH2D*) h_2DScanSampled->Clone(); h_2DScanLatched->SetNameTitle("2DScanLatched", "2DScanLatched");
   TH2D * h_2DScanOR = (TH2D*) h_2DScanSampled->Clone(); h_2DScanOR->SetNameTitle("2DScanOR", "2DScanOR");
@@ -456,11 +508,6 @@ void CBC3sim () {
     cout<<endl;
   }
 
-
-
-
-
-
   f->cd();
   h_vcthScan->Write();
   h_vcthScanDoubleHits->Write();
@@ -479,5 +526,3 @@ void CBC3sim () {
   h_2DScanORHIPDoubleHits->Write();
 
 }
-
-
