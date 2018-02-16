@@ -40,8 +40,9 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
   labelAxis(h_sumHitsInTwoClocks->GetXaxis());
   gStyle->SetOptStat(0);
 
-  //TF1 * landau = Function_Landau();
-  TF1 * landau = Function_LanGaus(); // This is the convolution!
+  //TF1 * landau = Function_LanGaus(); // This is the convolution!
+  TF1 * landau = Function_Landau();
+  TF1 * noise = gaussianNoise(); 
 
   // Event looper
   for (int ievent = 0; ievent < NEvents; ievent++) {
@@ -68,8 +69,13 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
       h_hitsNextClock->SetNameTitle("HitsNextClock", "HitsNextClock");
     }
 
+    // Get the charge randomly from the landau
     float charge = Step0_GetCharge(landau); 
     float charge2 = Step0_GetCharge(landau); 
+
+    // Add a random noise to the charge
+    charge += Step0_GetNoise(noise);
+    charge2 += Step0_GetNoise(noise);
 
     // Pulse shape function defined right after charge is known
     TF1 * shape  = Function_PulseShape(charge);

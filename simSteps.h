@@ -3,7 +3,8 @@
 
 //#include "Utils.h"
 
-float Step0_GetCharge ( TF1* ); // simStep zerp, get the charge of an event
+float Step0_GetCharge ( TF1* ); // simStep zero, get the charge of an event
+float Step0_GetNoise ( TF1* ); // simStep zero, get the noise of an event
 
 float Step1_PreampShaper ( int, TF1* ); // First simStep, pre-amplifier shaper funtion
 float Step1_PreampShaperDoubleHit ( int, TF1*, TF1* ); // Second simStep, pre-amplifier shaper for a double hit 
@@ -20,6 +21,13 @@ float Step0_GetCharge( TF1* f) {
   float charge = 2.5; // 1 MIP ~ 2.5 fC
   charge = f->GetRandom();
   return charge; 
+}
+
+float Step0_GetNoise( TF1* f) {
+  // Return fC (based on Landau*Gaussian)
+  //float noise = 2.5; // 1 MIP ~ 2.5 fC
+  float noise = f->GetRandom();
+  return noise; 
 }
 
 float Step1_PreampShaper( int time, TF1* f ) {

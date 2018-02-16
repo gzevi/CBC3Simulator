@@ -15,14 +15,15 @@
 #include "TLegend.h"
 #include "TRandom3.h"
 
-void labelAxis ( TAxis * ); 					// Axis labels
+void labelAxis ( TAxis * ); 					        // Axis labels
 
-double Double_LanGaus ( double *, double * ); 	// Returns convolution of landau with gaussian, to be used in TF1 
+double Double_LanGaus ( double *, double * ); // Returns convolution of landau with gaussian, to be used in TF1 
 double Function_RC ( double *, double * );		// Returns pulse shape
 
-TF1 * Function_Landau ( ); 						// Landau distribution
-TF1 * Function_LanGaus ( ); 					// Langaus distribution 
-TF1 * Function_PulseShape( float );				// Pulseshape function
+TF1 * Function_Landau ( ); 						        // Landau distribution
+TF1 * gaussianNoise ();                       // Gaussian distribution for the noise
+TF1 * Function_LanGaus ( ); 					        // Langaus distribution 
+TF1 * Function_PulseShape( float );				    // Pulseshape function
 
 void labelAxis(TAxis * a) {
   a->SetBinLabel(1, "Sampled");
@@ -32,10 +33,20 @@ void labelAxis(TAxis * a) {
   a->SetBinLabel(5, "OR_HIP");
 }
 
-TF1 * Function_Landau() {
+TF1 *gaussianNoise() {
+  // Use a gaussian around 0 (pedestal subtracted) with a noise of 6 Vcth
+  // f(x) = p0*exp(-0.5*((x-p1)/p2)^2)
+  TF1 *f = new TF1("f", "gaus", 0, 300);
+  f->SetParameters(1, 0, 6);
+  f->SetParNames("Normalisation", "Mean (pedestal)", "Sigma (noise)");
+  return f;
+}
+
+TF1 *Function_Landau() {
   // Currently using a Landau in Vcth units, but could use fC and then scale the PreampShaper output
-  TF1* f = new TF1("f", "landau", 0, 300);
+  TF1 *f = new TF1("f", "landau", 0, 300);
   f->SetParameters(1, 144, 9);
+  f->SetParNames("Normalisation", "Most probably value", "Sigma");
   return f;
 }
 
@@ -100,9 +111,9 @@ TF1 * Function_LanGaus() {
   // I set Landau "width" to 9 (is this the same as sigma?)
   // MVP is 144
   // Total area of the convolution is 1 for now, this is a normalization factor
-  // Sigma of the gaussian is 6 (CBC3 noise is 2 Vcth units??? To be checked!!!)
+  // Sigma of the gaussian is 6 (CBC3 noise is 6 Vcth units??? To be checked!!!)
   f->SetParameters(9, 144, 1, 6);
-  f->SetParNames("Width","MP","Area","GSigma");
+  f->SetParNames("Landau width", "Most probably value", "Normalisation", "Gaussian noise");
   return f;
 }
 
