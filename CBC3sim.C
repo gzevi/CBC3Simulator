@@ -36,10 +36,20 @@ bool      do2DScan = true;
 // MPV/width of Landau in beam test ~ 144/9 Vcth 
 ///////////////////////////////////////////////////
 
-TF1 * Function_Landau() {
+TF1 *gaussianNoise() {
+  // Use a gaussian around 0 (pedestal subtracted) with a noise of 6 Vcth
+  // f(x) = p0*exp(-0.5*((x-p1)/p2)^2)
+  TF1 *f = new TF1("f", "gaus", 0, 300);
+  f->SetParameters(1, 0, 6);
+  f->SetParNames("Normalisation", "Mean (pedestal)", "Sigma (noise)");
+  return f;
+}
+
+TF1 *Function_Landau() {
   // Currently using a Landau in Vcth units, but could use fC and then scale the PreampShaper output
-  TF1* f = new TF1("f", "landau", 0, 300);
+  TF1 *f = new TF1("f", "landau", 0, 300);
   f->SetParameters(1, 144, 9);
+  f->SetParNames("Normalisation", "Most probably value", "Sigma");
   return f;
 }
 
@@ -106,7 +116,7 @@ TF1 * Function_LanGaus() {
   // Total area of the convolution is 1 for now, this is a normalization factor
   // Sigma of the gaussian is 6 (CBC3 noise is 6 Vcth units??? To be checked!!!)
   f->SetParameters(9, 144, 1, 6);
-  f->SetParNames("Width","MP","Area","GSigma");
+  f->SetParNames("Landau width", "Most probably value", "Normalisation", "Gaussian noise");
   return f;
 }
 
@@ -139,9 +149,16 @@ TF1 * Function_PulseShape(float charge) {
 
 float Step0_GetCharge( TF1* f) {
   // Return fC (based on Landau*Gaussian)
-  float charge = 2.5; // 1 MIP ~ 2.5 fC
-  charge = f->GetRandom();
+  float charge = 2.5; // 1 MIP ~ 2.5 fC (But this is not used?)
+  charge = f->GetRandom(); // (Now charge is in Vcth again)
   return charge; 
+}
+
+float Step0_GetNoise( TF1* f) {
+  // Return fC (based on Landau*Gaussian)
+  //float noise = 2.5; // 1 MIP ~ 2.5 fC
+  float noise = f->GetRandom();
+  return noise; 
 }
 
 float Step1_PreampShaper( int time, TF1* f ) {
@@ -228,8 +245,9 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
   labelAxis(h_sumHitsInTwoClocks->GetXaxis());
   gStyle->SetOptStat(0);
 
-  //TF1 * landau = Function_Landau();
-  TF1 * landau = Function_LanGaus(); // This is the convolution!
+  //TF1 * landau = Function_LanGaus(); // This is the convolution!
+  TF1 * landau = Function_Landau();
+  TF1 * noise = gaussianNoise(); 
 
   // Event looper
   for (int ievent = 0; ievent < NEvents; ievent++) {
@@ -256,8 +274,13 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
       h_hitsNextClock->SetNameTitle("HitsNextClock", "HitsNextClock");
     }
 
+    // Get the charge randomly from the landau
     float charge = Step0_GetCharge(landau); 
     float charge2 = Step0_GetCharge(landau); 
+
+    // Add a random noise to the charge
+    charge += Step0_GetNoise(noise);
+    charge2 += Step0_GetNoise(noise);
 
     // Pulse shape function defined right after charge is known
     TF1 * shape  = Function_PulseShape(charge);
