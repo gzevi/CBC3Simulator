@@ -2,29 +2,6 @@
 #include "Utils.h"
 #include "simSteps.h"
 
-/*// Currently see no reason to modify these once they are set
-const int       NEvents = 1000; // Number of events for each RunTest call
-const int       Nck = 4; // Number of clock cycles
-const int       HipSuppress = 1; // 0 means don't suppress
-
-// Knobs that are overwritten when performing scans
-int       Vcth = 20; // DAC units, already pedestal-subtracted
-int       DLL = 10; // DLL delay. If DLL=0, signal pulse starts at t=0. If DLL=10, it starts at 10
-
-// Verbosity etc
-int       verbose = 0; // 0: none, 1: every event, 2: every clock, 3: every ns
-bool      diagnosticHistograms = false; // Make histograms for every event (reduce NEvents to avoid slowing down)
-bool      doVcthScan = true;
-bool      doDLLScan = true;
-bool      do2DScan = true;
-*/
-//////////// Some useful numbers: /////////////////
-// 1 Vcth ~ 130 electrons
-// 1 MIP ~ 2.5 fC
-// Pulse shape peak for 2.5, 5, 7.5, 10 fC is ~ 100, 225, 325, 375 Vcth units 
-// MPV/width of Landau in beam test ~ 144/9 Vcth 
-///////////////////////////////////////////////////
-
 vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
 
   f->cd();
@@ -150,14 +127,14 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
 
         if (verbose>=2) cout<<"Sampled\tLatched\tOR   SampledHIP\tORHIP  [LatchedNextCock]"<<endl;
         if (verbose>=2) cout<<foundSampledHitThisClock<<" \t "<<foundLatchedHitThisClock<<" \t "<<foundORHit<<" \t "<<foundSampledHitHIP<<" \t "<<foundORHitHIP<<" \t "<<foundLatchedHitNextClock << endl;
-      }
+      } // End IF clockcycle == 1
 
       if (ick == 2) { // Late and Double hits
 
         if (foundSampledHitThisClock)  {  
           h_sumHitsNextClock->Fill(1); 
           if (diagnosticHistograms) h_hitsNextClock->Fill(1); 
-          if (countSampledHits>0)     h_sumHitsInTwoClocks->Fill(1);
+          if (countSampledHits>0)     h_sumHitsInTwoClocks->Fill(1); // This means it was in two clockcycles because in clc == 1 it was made bigger than 1 if there was a hit
         }
         if (foundLatchedHitThisClock)  {  
           h_sumHitsNextClock->Fill(2); 
@@ -180,7 +157,7 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
           if (countORHIPHits>0)       h_sumHitsInTwoClocks->Fill(5);
         } 
 
-      }
+      } // End IF clockcycle == 2
 
     } // End of clock
 
@@ -229,7 +206,7 @@ void CBC3Simulation () {
   TDirectory * VcthDir = f->mkdir(Form("ThresholdScan_DLL%i", DLL));
   VcthDir->cd();
   float vcthStart = 20;
-  float vcthRange = 180;
+  float vcthRange = 450;
   float vcthStep = 2;
   TH2D * h_vcthScan = new TH2D(Form("ThresholdScan_DLL%i", DLL), "ThresholdScan", (int) vcthRange/vcthStep, vcthStart, vcthStart+vcthRange, 5, 0.5, 5.5);
   labelAxis(h_vcthScan->GetYaxis());
@@ -325,6 +302,73 @@ void CBC3Simulation () {
     }
     std::cout << std::endl;
   }
+
+  // This is for plotting, a bit ufly though because it is still in this file. To be fixed soon!
+
+  TCanvas *c0 = new TCanvas();
+  TH1D *p_vcthScanLatched = h_vcthScan->ProjectionX("projectionLatchedVcthScanDDL15", 2, 2, "");
+  p_vcthScanLatched->SetTitle("Threshold scan, latched, DDL15;Threshold [Vcth];Efficiency []");
+  p_vcthScanLatched->Draw("");
+
+  TCanvas *c1 = new TCanvas();
+  TH1D *p_vcthScanLatchedDiff = (TH1D*) p_vcthScanLatched->Clone(); 
+  p_vcthScanLatchedDiff->SetNameTitle("diffLatchedVcthScanDDL15", "Threshold scan (differential), latched, DDL15;Threshold [Vcth];Efficiency []");
+  for ( int i = 0; i < p_vcthScanLatchedDiff->GetNbinsX()-1; i++ ) {
+    p_vcthScanLatchedDiff->SetBinContent( i, p_vcthScanLatched->GetBinContent(i) - p_vcthScanLatched->GetBinContent(i+1) );
+  }
+  p_vcthScanLatchedDiff->Draw("");
+  
+  TCanvas *c2 = new TCanvas();
+  TH1D *p_vcthScanSampled = h_vcthScan->ProjectionX("projectionSampledVcthScanDDL15", 1, 1, "");
+  p_vcthScanSampled->SetTitle("Threshold scan, sampled, DDL15;Threshold [Vcth];Efficiency []");
+  p_vcthScanSampled->Draw("");
+
+  TCanvas *c3 = new TCanvas();
+  TH1D *p_vcthScanSampledDiff = (TH1D*) p_vcthScanLatched->Clone();
+  p_vcthScanSampledDiff->SetNameTitle("diffSampledVcthScanDDL15", "Threshold scan (differential), sampled, DDL15;Threshold [Vcth];Efficiency []");
+  for ( int i = 0; i < p_vcthScanSampledDiff->GetNbinsX()-1; i++ ) {
+    p_vcthScanSampledDiff->SetBinContent( i, p_vcthScanSampled->GetBinContent(i) - p_vcthScanSampled->GetBinContent(i+1) );
+  }
+  p_vcthScanSampledDiff->Draw("");
+
+  TCanvas *c4 = new TCanvas();
+  TH1D *p_vcthScanOR = h_vcthScan->ProjectionX("projectionOrVcthScanDDL15", 3, 3, "");
+  p_vcthScanOR->SetTitle("Threshold scan, OR, DDL15;Threshold [Vcth];Efficiency []");
+  p_vcthScanOR->Draw("");
+
+  TCanvas *c5 = new TCanvas();
+  TH1D *p_vcthScanORDiff = (TH1D*) p_vcthScanLatched->Clone();
+  p_vcthScanORDiff->SetNameTitle("diffORVcthScanDDL15", "Threshold scan (differential), OR, DDL15;Threshold [Vcth];Efficiency []");
+  for ( int i = 0; i < p_vcthScanORDiff->GetNbinsX()-1; i++ ) {
+    p_vcthScanORDiff->SetBinContent( i, p_vcthScanOR->GetBinContent(i) - p_vcthScanOR->GetBinContent(i+1) );
+  }
+  p_vcthScanORDiff->Draw("");
+
+  //TF1 *landau = new TF1("f", "landau", 0., 600.);
+  TF1 *langausFitFunction = new TF1("f", Double_LanGaus, 50., 300., 4);  
+  langausFitFunction->SetNpx(500);
+  langausFitFunction->SetParameters(9., 144., 1., 6.);
+  //langausFitFunction->FixParameter(0, 9.);
+  //langausFitFunction->FixParameter(1, 144.);
+  //langausFitFunction->FixParameter(3, 6.);
+  langausFitFunction->SetParLimits(0, 0., 12.);
+  langausFitFunction->SetParLimits(1., 120., 160.);
+  langausFitFunction->SetParLimits(3, 0., 100.);
+  langausFitFunction->SetParNames("width", "MPV", "Norm", "Noise");
+
+  std::cout << "Latched: " << std::endl;
+  p_vcthScanLatchedDiff->Fit(langausFitFunction, "R");
+  std::cout << "Sampled: " std::<< endl;
+  p_vcthScanSampledDiff->Fit(langausFitFunction, "R");
+  std::cout << "Or mode: " << std::endl;
+  p_vcthScanORDiff->Fit(langausFitFunction, "R");
+
+  c1->SaveAs("./images/latchedDiffFitLandauAddedNoiseWithLangaus.pdf");
+  p_vcthScanLatchedDiff->SaveAs("./rootfiles/latchedDiffFitLandauAddedNoiseWithLangaus.root");
+  c3->SaveAs("./images/sampledDiffFitLandauAddedNoiseWithLangaus.pdf");
+  p_vcthScanSampledDiff->SaveAs("./rootfiles/sampledDiffFitLandauAddedNoiseWithLangaus.root");  
+  c5->SaveAs("./images/orDiffFitLandauAddedNoiseWithLangaus.pdf");
+  p_vcthScanORDiff->SaveAs("./rootfiles/orDiffFitLandauAddedNoiseWithLangaus.root");  
 
   f->cd();
   h_vcthScan->Write();

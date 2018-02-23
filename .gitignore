@@ -4,3 +4,5 @@
 *.root
 *.pdf
 rootfiles/
+images/
+plots/
