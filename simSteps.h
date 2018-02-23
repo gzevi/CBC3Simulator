@@ -1,13 +1,13 @@
 #ifndef SIMSTEPS_HH
 #define SIMSTEPS_HH
 
-//#include "Utils.h"
+#include "Utils.h"
 
 float Step0_GetCharge ( TF1* ); // simStep zero, get the charge of an event
 float Step0_GetNoise ( TF1* ); // simStep zero, get the noise of an event
 
-float Step1_PreampShaper ( int, TF1* ); // First simStep, pre-amplifier shaper funtion
-float Step1_PreampShaperDoubleHit ( int, TF1*, TF1* ); // Second simStep, pre-amplifier shaper for a double hit 
+float Step1_PreampShaper ( int, TF1*, int ); // First simStep, pre-amplifier shaper funtion
+float Step1_PreampShaperDoubleHit ( int, TF1*, TF1*, int ); // Second simStep, pre-amplifier shaper for a double hit 
 
 bool Step2_Comparator ( float, float ); // Second simStep, comparator (binary output)
 
@@ -30,12 +30,12 @@ float Step0_GetNoise( TF1* f) {
   return noise; 
 }
 
-float Step1_PreampShaper( int time, TF1* f ) {
+float Step1_PreampShaper( int time, TF1* f, int dll) {
   // Return mV at each ns (based on parametrized shape)
   // Pulse shape is longer than a clock cycle
   
   // DLL delay shifts the shape 
-  int timeCorr = time - DLL;
+  int timeCorr = time - dll;
   float voltage = 0;
 
   // External function
@@ -44,12 +44,12 @@ float Step1_PreampShaper( int time, TF1* f ) {
   return voltage;
 }
 
-float Step1_PreampShaperDoubleHit( int time, TF1* f, TF1* f2 ) {
+float Step1_PreampShaperDoubleHit( int time, TF1* f, TF1* f2, int dll ) {
   // Return mV at each ns (based on parametrized shape)
   // Pulse shape is longer than a clock cycle
   
   // DLL delay shifts the shape 
-  int timeCorr = time - DLL;
+  int timeCorr = time - dll;
   float voltage = 0;
 
   // External function
@@ -84,8 +84,8 @@ bool Step3_HitDetectLatched( bool comp , int time, bool compMinusOneNs ) {
   else return false;
 }
 
-bool Step4_HIPSuppress( bool hit , int &countPreviousHits ) {
-  if ( countPreviousHits >= HipSuppress ) {
+bool Step4_HIPSuppress( bool hit , int &countPreviousHits, int hipSuppress ) {
+  if ( countPreviousHits >= hipSuppress ) {
     return false;
   }
   else return hit;

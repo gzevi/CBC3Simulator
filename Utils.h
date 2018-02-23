@@ -23,7 +23,7 @@ double Function_RC ( double *, double * );		// Returns pulse shape
 TF1 * Function_Landau ( ); 						        // Landau distribution
 TF1 * gaussianNoise ();                       // Gaussian distribution for the noise
 TF1 * Function_LanGaus ( ); 					        // Langaus distribution 
-TF1 * Function_PulseShape( float );				    // Pulseshape function
+TF1 * Function_PulseShape( float, int );			// Pulseshape function
 
 void labelAxis(TAxis * a) {
   a->SetBinLabel(1, "Sampled");
@@ -129,11 +129,11 @@ double Function_RC(double *x, double *par) {
 
 }
 
-TF1 * Function_PulseShape(float charge) {
+TF1 * Function_PulseShape(float charge, int nck) {
   // TF1* f = new TF1("f1", "gaus", 0, Nck*25);
   // f->SetParameters(charge, 20, 10);
 
-  TF1* f = new TF1("f1", Function_RC, -25, (Nck-1)*25, 3);
+  TF1* f = new TF1("f1", Function_RC, -25, (nck-1)*25, 3);
   f->SetParameters(3, 4, 1);
 
   // Normalize so that peak matches "charge". This way if we draw "140" from the Landau distribution,

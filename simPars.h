@@ -1,3 +1,6 @@
+#ifndef SIMPARS_HH
+#define SIMPARS_HH
+
 // Simulation parameters
 
 // Currently see no reason to modify these once they are set
@@ -15,3 +18,5 @@ bool      diagnosticHistograms = false; // Make histograms for every event (redu
 bool      doVcthScan = true;
 bool      doDLLScan = true;
 bool      do2DScan = true;
+
+#endif
