@@ -201,7 +201,7 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
 
 void CBC3Simulation () {
 
-  TFile * f = new TFile(Form("cbc3Simulation_%s.root", cSimFileName), "RECREATE");
+  TFile * f = new TFile(Form("./simresults/cbc3Simulation_%s.root", cSimFileName), "RECREATE");
   f->cd();
 
   // Threshold scan

@@ -3,7 +3,7 @@
 #include "Utils.h"
 
 const char *getFileName (const char * cSimFileName) {
-  return Form("cbc3Simulation_%s.root", cSimFileName);
+  return Form("./simresults/cbc3Simulation_%s.root", cSimFileName);
 }
 
 void analysis () {
@@ -81,6 +81,4 @@ void analysis () {
   p_vcthScanSampledDiff->SaveAs("./rootfiles/sampledDiffFitLandauAddedNoiseWithLangaus.root");  
   c5->SaveAs("./images/orDiffFitLandauAddedNoiseWithLangaus.pdf");
   p_vcthScanORDiff->SaveAs("./rootfiles/orDiffFitLandauAddedNoiseWithLangaus.root");  
-
-
 }
