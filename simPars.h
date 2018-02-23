@@ -2,9 +2,10 @@
 #define SIMPARS_HH
 
 // Simulation parameters
+const char * cSimFileName = "VcthOnly_10000events";
 
 // Currently see no reason to modify these once they are set
-const int       NEvents = 1000; // Number of events for each RunTest call
+const int       NEvents = 10000; // Number of events for each RunTest call
 const int       Nck = 4; // Number of clock cycles
 const int       HipSuppress = 1; // 0 means don't suppress
 
@@ -16,7 +17,7 @@ int       DLL = 10; // DLL delay. If DLL=0, signal pulse starts at t=0. If DLL=1
 int       verbose = 0; // 0: none, 1: every event, 2: every clock, 3: every ns
 bool      diagnosticHistograms = false; // Make histograms for every event (reduce NEvents to avoid slowing down)
 bool      doVcthScan = true;
-bool      doDLLScan = true;
-bool      do2DScan = true;
+bool      doDLLScan = false;
+bool      do2DScan = false;
 
 #endif

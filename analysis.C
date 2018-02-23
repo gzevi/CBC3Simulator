@@ -2,16 +2,13 @@
 
 #include "Utils.h"
 
-//#include "TFile.h"
-//#include "TCanvas.h"
-//#include "TH1.h"
-//#include "TH2.h"
-
-const char *cFileName = "./TestSim.root";
+const char *getFileName (const char * cSimFileName) {
+  return Form("cbc3Simulation_%s.root", cSimFileName);
+}
 
 void analysis () {
 
-  TFile *cFile = TFile::Open(cFileName);
+  TFile *cFile = TFile::Open( getFileName("VcthOnly_10000events") );
   TH2* cVcthHist = 0;
 
   cFile->GetObject("ThresholdScan_DLL15", cVcthHist);
