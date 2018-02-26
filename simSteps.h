@@ -3,7 +3,7 @@
 
 #include "Utils.h"
 
-float Step0_GetCharge ( TF1* ); // simStep zero, get the charge of an event
+float Step0_GetCharge ( TF1*, bool, double, double ); // simStep zero, get the charge of an event
 float Step0_GetNoise ( TF1* ); // simStep zero, get the noise of an event
 
 float Step1_PreampShaper ( int, TF1*, int ); // First simStep, pre-amplifier shaper funtion
@@ -16,10 +16,19 @@ bool Step3_HitDetectLatched ( bool, int, bool ); // Third simStep, hit detect lo
 
 bool Step4_HIPSuppress ( bool , int & ); // Fourth simStep, HIP suppress logic of the CBC3
 
-float Step0_GetCharge( TF1* f) {
+float Step0_GetCharge( TF1* f, bool pChargeSharing, double pCsRange, double pPitch) {
   // Return fC (based on Landau*Gaussian)
   float charge = 2.5; // 1 MIP ~ 2.5 fC
   charge = f->GetRandom();
+
+  if ( pChargeSharing ) {
+    TRandom3 myDice = 0;
+    if ( myDice.Rndm() < pCsRange/pPitch ) {
+      double x = myDice.Rndm();
+      charge *= 0.5 + x/2.;
+    } // end if we hit in the range of the charge sharing
+  } // end if chargeSharing
+
   return charge; 
 }
 

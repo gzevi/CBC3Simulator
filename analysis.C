@@ -2,13 +2,17 @@
 
 #include "Utils.h"
 
+const char * simFileName = "VcthOnly_WithChargeSharing45_10000events";
+
 const char *getFileName (const char * cSimFileName) {
   return Form("./simresults/cbc3Simulation_%s.root", cSimFileName);
 }
 
+// At the moment this analysis only focusses on the output of the Vcth scan. It is used to determine whether if the input parameters can be found back after the simulation.
+
 void analysis () {
 
-  TFile *cFile = TFile::Open( getFileName("VcthOnly_10000events") );
+  TFile *cFile = TFile::Open( getFileName(simFileName) );
   TH2* cVcthHist = 0;
 
   cFile->GetObject("ThresholdScan_DLL15", cVcthHist);
@@ -75,10 +79,10 @@ void analysis () {
   std::cout << "Or mode: " << std::endl;
   p_vcthScanORDiff->Fit(langausFitFunction, "R");
 
-  c1->SaveAs("./images/latchedDiffFitLandauAddedNoiseWithLangaus.pdf");
-  p_vcthScanLatchedDiff->SaveAs("./rootfiles/latchedDiffFitLandauAddedNoiseWithLangaus.root");
-  c3->SaveAs("./images/sampledDiffFitLandauAddedNoiseWithLangaus.pdf");
-  p_vcthScanSampledDiff->SaveAs("./rootfiles/sampledDiffFitLandauAddedNoiseWithLangaus.root");  
-  c5->SaveAs("./images/orDiffFitLandauAddedNoiseWithLangaus.pdf");
-  p_vcthScanORDiff->SaveAs("./rootfiles/orDiffFitLandauAddedNoiseWithLangaus.root");  
+  c1->SaveAs(Form("./images/%s_latchedDiffFitLandauAddedNoiseWithLangaus.pdf", simFileName));
+  p_vcthScanLatchedDiff->SaveAs(Form("./rootfiles/%s_latchedDiffFitLandauAddedNoiseWithLangaus.root", simFileName));
+  c3->SaveAs(Form("./images/%s_sampledDiffFitLandauAddedNoiseWithLangaus.pdf", simFileName));
+  p_vcthScanSampledDiff->SaveAs(Form("./rootfiles/%s_sampledDiffFitLandauAddedNoiseWithLangaus.root", simFileName));  
+  c5->SaveAs(Form("./images/%s_orDiffFitLandauAddedNoiseWithLangaus.pdf", simFileName));
+  p_vcthScanORDiff->SaveAs(Form("./rootfiles/%s_orDiffFitLandauAddedNoiseWithLangaus.root", simFileName));  
 }

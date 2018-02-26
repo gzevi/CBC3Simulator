@@ -50,8 +50,8 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
     }
 
     // Get the charge randomly from the landau
-    float charge = Step0_GetCharge(landau); 
-    float charge2 = Step0_GetCharge(landau); 
+    float charge = Step0_GetCharge(landau, chargeSharing, csRange, pitch); 
+    float charge2 = Step0_GetCharge(landau, chargeSharing, csRange, pitch); 
 
     // Add a random noise to the charge
     charge += Step0_GetNoise(noise);
