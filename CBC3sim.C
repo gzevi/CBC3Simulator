@@ -29,6 +29,10 @@ bool      doVcthScan = true;
 bool      doDLLScan = true;
 bool      do2DScan = true;
 
+// best guess at shape of flandau 
+double defLandauPars[3]={1.0, 144 , 9.0};
+double defPulseShapePars[4]={3, 4, 1, 0.0};
+
 //////////// Some useful numbers: /////////////////
 // 1 Vcth ~ 130 electrons
 // 1 MIP ~ 2.5 fC
@@ -42,6 +46,29 @@ TF1 *gaussianNoise() {
   TF1 *f = new TF1("f", "gaus", 0, 300);
   f->SetParameters(1, 0, 6);
   f->SetParNames("Normalisation", "Mean (pedestal)", "Sigma (noise)");
+  return f;
+}
+TF1 * Function_Landau(double* pars, TString pFuncName="f", double pXmin=0,double pXmax=300) 
+{
+  // Currently using a Landau in Vcth units, but could use fC and then scale the PreampShaper output
+  TF1* f = new TF1(pFuncName.Data(), "landau", pXmin, pXmax);
+  f->SetParameters(pars);//1, 144, 9);
+  return f;
+}
+double StepFunction(double* x , double *par)
+{
+  double x0 = x[0];
+  double tStart = par[0];
+  double tStop = par[1];
+  double riseTime = par[2];
+
+  return 0.5*(TMath::Erf((x0-tStart)/(sqrt(2.)*riseTime)) - TMath::Erf((x0-tStop)/(sqrt(2.)*riseTime)));
+}
+TF1 * Function_Comparator(double* pars, TString pFuncName="f", double pXmin=0,double pXmax=300) 
+{
+  // Currently using a Landau in Vcth units, but could use fC and then scale the PreampShaper output
+  TF1* f = new TF1(pFuncName.Data(), StepFunction, pXmin, pXmax, 3);
+  f->SetParameters(pars);//1, 144, 9);
   return f;
 }
 
@@ -132,17 +159,19 @@ double Function_RC(double *x, double *par) {
 
 }
 
-TF1 * Function_PulseShape(float charge) {
+
+TF1 * Function_PulseShape(float charge, double* pars, TString pFuncName="f1", double pXmin=-25 , double pXmax=(Nck-1)*25) {
   // TF1* f = new TF1("f1", "gaus", 0, Nck*25);
   // f->SetParameters(charge, 20, 10);
 
-  TF1* f = new TF1("f1", Function_RC, -25, (Nck-1)*25, 3);
-  f->SetParameters(3, 4, 1);
+  TF1* f = new TF1(pFuncName.Data(), Function_RC, pXmin, pXmax, 4);
+  f->SetParameters(pars);//3, 4, 1,0);
 
   // Normalize so that peak matches "charge". This way if we draw "140" from the Landau distribution,
   // we will have a PulseShape that has a maximum value of 140
   double max = f->GetMaximum(0, 1000);
-  f->SetParameters(3, 4, charge/max);
+  f->SetParameter(2, charge/max);
+  //f->SetParameters(3, 4, charge/max,0.0);
 
   return f;
 }
@@ -283,8 +312,9 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
     charge2 += Step0_GetNoise(noise);
 
     // Pulse shape function defined right after charge is known
-    TF1 * shape  = Function_PulseShape(charge);
-    TF1 * shape2 = Function_PulseShape(charge2);
+    TF1 * shape  = Function_PulseShape(charge,defPulseShapePars);
+    TF1 * shape2 = Function_PulseShape(charge2,defPulseShapePars);
+
 
     // Internal counters
     bool comparatorOutputPreviousNanosecond = false;
