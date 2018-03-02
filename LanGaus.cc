@@ -1,15 +1,29 @@
 //SYSTEM
-#include <iostream>
+//#include <iostream>
 
 //ROOT
-#include "TMath.h"
 #include "Math/WrappedTF1.h"
 #include "Math/GaussLegendreIntegrator.h"
 #include "Math/GSLIntegrator.h"
+#include "Math/PdfFuncMathCore.h"
 
 const double cToleranceIntegration=1e-18;
     
 // some useful functions (Landau/LanGauss convolution )
+double Landau(double x , double* par)
+{
+    double xmpv_Landau  = 0.22278298;       // Landau maximum location
+    
+    double mpc = par[0];
+    double sigmaLandau = par[1];
+    
+    double fLandau = (1/(sigmaLandau))*::ROOT::Math::landau_pdf( (x - mpc)/sigmaLandau - xmpv_Landau); 
+    return fLandau;
+}
+double fLandauDistribution(double* x , double* par )
+{
+    return Landau(x[0],par);
+}
 double LanGauss(double* yValue , double* par)
 {
     double xmpv_Landau  = 0.22278298;       // Landau maximum location

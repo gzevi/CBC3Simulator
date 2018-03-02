@@ -30,7 +30,7 @@ const double cDeadTime_LatchedMode=2.7; // default is 2.7 in ns
 const double cDeadTime_SampledMode=0.3; // default is 0.3 in ns
 
 typedef std::pair<bool,bool> HitDetectStates;
-const bool ChargeSharing = true;
+const bool ChargeSharing = false;
 const double cSizeChargeSharingRegion=0.05*0.5; // default 0.01*0.5 ; 
 
 // pretty color palette?!
@@ -46,87 +46,6 @@ void set_plot_style()
     TColor::CreateGradientColorTable(NRGBs, stops, red, green, blue, NCont);
     gStyle->SetNumberContours(NCont);
 }
-
-// // some useful functions (Landau/LanGauss convolution )
-// double ConvoluteLanGaus(double x , double* par)
-// {
-//     double xmpv_Landau  = 0.22278298;       // Landau maximum location
-    
-//     double mpc = par[0];
-//     double sigmaLandau = par[1];
-//     double sigmaGaus = par[2];
-//     double rIntegral=par[3];
-//     //int nIntegrationPoints=par[4];
-    
-//     // numerically integrating 
-//     double xMin = x - rIntegral*sigmaGaus;//-1*rIntegral*mpc;//x - 100*sigmaGaus;
-//     double xMax = x + rIntegral*sigmaGaus;// 1*rIntegral*mpc;//x + 100*sigmaGaus;
-
-
-//     TF1 f("lanGauss",LanGauss , xMin , xMax,4);
-//     double params[4]={mpc,sigmaLandau,sigmaGaus,x};
-//     f.SetParameters(params);
-//     //return simpsonsRule(&f, xMin , xMax , nIntegrationPoints);
-
-//     ROOT::Math::WrappedTF1 wf1(f);
-//     // //using ROOT's built in integrator 
-//     ROOT::Math::GSLIntegrator ig(ROOT::Math::IntegrationOneDim::kADAPTIVE);
-//     // Set parameters of the integration
-//     ig.SetFunction(wf1);
-//     ig.SetRelTolerance(cToleranceIntegration);
-//     return ig.Integral(xMin,xMax);
-    
-// }
-// double LanGausConvolution(double* x , double* par)
-// {
-//     return ConvoluteLanGaus(x[0],par);
-// }
-// double fLanGausIntegral(double x , double* par)
-// {
-//     double mpc = par[0];
-//     double sigmaLandau = par[1];
-//     double sigmaGaus = par[2];
-//     double rIntegral=par[3];
-//     //int nIntegrationPoints=par[4];
-
-//     double xMin = x;
-//     double xMax = 1*rIntegral*mpc;
-//     double convolutionParameters[5]={mpc,sigmaLandau,sigmaGaus,5};//{mpc,sigmaLandau,sigmaGaus,10,500};
-//     TF1 f("lanGaussIntegral",LanGausConvolution , xMin , xMax,4);
-//     f.SetParameters(convolutionParameters);
-//     ROOT::Math::WrappedTF1 wf1(f);
-    
-//     // // Create the Integrator
-//     ROOT::Math::GSLIntegrator ig(ROOT::Math::IntegrationOneDim::kADAPTIVE);
-//     // Set parameters of the integration
-//     ig.SetFunction(wf1);
-//     ig.SetRelTolerance(cToleranceIntegration);
-//     return ig.Integral(xMin,xMax);
-// }
-// double mipEfficiency(double* x , double* par)
-// {
-//     double mpc = par[0];
-//     double sigmaLandau = par[1];
-//     double sigmaGaus = par[2];
-//     double rIntegral=par[3];
-//     double cEff=par[4];
-//     //double nIntegrationPoints=par[4];
-    
-//     double parametersLanGaus[4]={mpc,sigmaLandau,sigmaGaus,rIntegral};
-//     return cEff*fLanGausIntegral(x[0],parametersLanGaus);
-// }
-// double detResponse(double* x , double* par)
-// {
-//     double mpc = par[0];
-//     double sigmaLandau = par[1];
-//     double sigmaGaus = par[2];
-//     double rIntegral=5;
-//     double cNorm=par[3];
-
-//     double parametersLanGaus[4]={mpc,sigmaLandau,sigmaGaus,rIntegral};
-//     return cNorm*ConvoluteLanGaus(x[0],parametersLanGaus);
-    
-// }
 
 
 // quick check of charge sharing 
@@ -233,7 +152,7 @@ void populateHits(TString pFileName="./ToyMC_test.root", int pNmodules=10, int p
 	int nModules = pNmodules;
 	int nTotalNumberOfChannels = nModules*nCBCs_perModule*nStrips_perCBC;
 	double parsLandau[]={1.0, pLandauMPV_kElectrons,pLandauWidth_kElectrons };
-	TF1* fLandau = Function_Landau(parsLandau, "fLandau",pEnergyMin_kElectrons, pEnergyMax_kElectrons);
+	TF1* fLandau = Function_Landau(parsLandau, "fLandauDistribution",pEnergyMin_kElectrons, pEnergyMax_kElectrons);
 	
 	double parsChargeSharing[]={-0.5,0.5,cChargeSharing};
 	TF1* fChargeSharing = Function_Comparator(parsChargeSharing, "fChargeSharing",-0.5, 0.5);
@@ -276,7 +195,7 @@ void populateHits(TString pFileName="./ToyMC_test.root", int pNmodules=10, int p
  				it = find (cHits.begin(), cHits.end(), channelNumber);
  			}while( it != cHits.end() );
  			cHits.push_back(channelNumber);
-			
+				
  			// check if this channel also fired in the previous bx 
  			if( iBx > 0 ) // only makes sense if BX > 0 
  			{
@@ -349,6 +268,11 @@ void populateHits(TString pFileName="./ToyMC_test.root", int pNmodules=10, int p
 					hPostAmplifier_wNoise->Fill(xValue, nSecondChannel, fSignalSecond->Eval(xValue) );
 				}
 	 		}
+
+	 		cOut.Form("..... finished populating hits .... [%d] Bx%d\n", iChannel, iBx );
+	 		if( iChannel%250 == 0 )
+	 			std::cout << cOut.Data();
+
 
 		}
 		cHitsPrevBx.clear();
@@ -781,7 +705,7 @@ void measureRates(TString pFileName="./ToyMC_CBC3_test.root",  int pThreshold_DA
 
 
 }
-void TrackerSimulation (TString pFileName="./test.root", double pOccupancy=1e-2, int pNmodules=10, int pNbunchCrossings=10, int pThreshold_DAC_min=0, int pThreshold_DAC_max=300, int pThreshold_DAC_step=5)
+void TrackerSimulation (TString pFileName="./100modules_noChargeSharing.root", double pOccupancy=1e-2, int pNmodules=20, int pNbunchCrossings=100, int pThreshold_DAC_min=0, int pThreshold_DAC_max=300, int pThreshold_DAC_step=5)
 { 
 	TString cOut;
 	int nModules=pNmodules;
@@ -790,11 +714,12 @@ void TrackerSimulation (TString pFileName="./test.root", double pOccupancy=1e-2,
     //testChargeSharing();
 
     // populate hits for pNmodules modules [ only need to do this once]
-    double cMPcharge_DACunits = 143.652;//1.38872e+02;
-    double cLandauWidth_DACunits = 7.09689;//5.94555e+00;
-    double cNoise_DACunits = 17.4744;//6; //2.47530e+01;//
+    double cMPcharge_DACunits = 143.652;//
+    double cLandauWidth_DACunits = 7.09689;//
+    double cNoise_DACunits = 17.4744;//
     double cPedestal_kElectrons = 2;//
 	populateHits(pFileName, nModules,pNbunchCrossings,pOccupancy,cMPcharge_DACunits*cConversion_CBC3,cLandauWidth_DACunits*cConversion_CBC3,cPedestal_kElectrons,cNoise_DACunits*cConversion_CBC3, cSizeChargeSharingRegion);
+	
 	// then fill comparator outputs [only need to do this once]
 	//populateComparator(pFileName, pThreshold_DAC_min,pThreshold_DAC_max,pThreshold_DAC_step);
 	// figure out how long this took

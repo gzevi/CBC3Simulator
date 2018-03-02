@@ -284,10 +284,10 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
 
     // Diagnostic histograms, per event
     TDirectory * eventDir;
-    TH1D* h_pulse;
-    TH1D* h_comp;
-    TH1D* h_hits;
-    TH1D* h_hitsNextClock;
+    TH1D* h_pulse=0;
+    TH1D* h_comp=0;
+    TH1D* h_hits=0;
+    TH1D* h_hitsNextClock=0;
 
     if (diagnosticHistograms) {
       eventDir = testDir->mkdir( Form("Event%i", ievent) );
