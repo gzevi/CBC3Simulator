@@ -32,7 +32,7 @@ bool      do2DScan = true;
 // best guess at shape of flandau 
 double defLandauPars[3]={1.0, 144 , 9.0};
 double defPulseShapePars[4]={3, 4, 1, 0.0};
-double defCbc3PulseShapePars[5]={0,7.7,1e-3,TMath::PiOver2(),6};
+double defCbc3PulseShapePars[5]={0,12.4,-12.,0.79,3};
 
 //////////// Some useful numbers: /////////////////
 // 1 Vcth ~ 130 electrons

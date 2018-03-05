@@ -25,9 +25,9 @@ const double nStages_CBC3=3; // # amplification stages
 const double tau_CBC3=4.; // in ns 
 const double tRiseTime_CBC3=2; // in ns
 // and some parameters for the default pulse shape (more realistic)
-const double tau_CBC3improv =7.7;
-const double r_CBC3improv=1e-3;
-const double theta_CBC3improv=TMath::PiOver2();
+const double tau_CBC3improv =12.4;
+const double r_CBC3improv=-12.0;
+const double theta_CBC3improv=0.79;//TMath::PiOver2();
 const double nTerms=3;
 
 
@@ -55,7 +55,7 @@ void set_plot_style()
 
 // try and figure out best settings for comparator
 // from measured pulse shape using on-chip test pulse 
-void fitPulseShape(TString pFileName="./examplePulseShape_MIP_CBC3.root", double pPedestal_DACunits=598, double pUnc_Perc=10)
+void fitPulseShape(TString pFileName="./examplePulseShape_MIP_CBC3.root", double pPedestal_DACunits=598, double pUnc_Perc=5)
 {
 	TString cHistName;
 	TH1D* hMeasuredPulse=0;
@@ -80,9 +80,6 @@ void fitPulseShape(TString pFileName="./examplePulseShape_MIP_CBC3.root", double
 		}
 	}
 
-	hPulseShape_pSub->SetStats(0);
-	hPulseShape_pSub->DrawCopy("eHisto");
-
 	TString cFuncName;
 	//first try and fit CRC
 	cFuncName.Form("fPulse_CRC"); 
@@ -103,9 +100,12 @@ void fitPulseShape(TString pFileName="./examplePulseShape_MIP_CBC3.root", double
   	f1->FixParameter(4,nTerms);
   	//f1->FixParameter(0,10);
   	f1->SetParLimits(3,0,TMath::PiOver2());
-	hPulseShape_pSub->Fit(f1,"nr","",0,60);
-  	f1->Draw("same");
-
+	TCanvas* c = new TCanvas("c","c",350,350);
+	c->cd(1);
+	hPulseShape_pSub->Fit(f1,"nr+","",0,60);
+	hPulseShape_pSub->SetStats(0);
+	hPulseShape_pSub->DrawCopy("eHisto");
+	f1->Draw("same");
 }
 // quick check of charge sharing 
 void testChargeSharing( double pLandauMPV_kElectrons=25, double pLandauWidth_kElectrons=2, double pNoise_kElectrons=0.8, double pEnergyMin_kElectrons = 0.0 , double pEnergyMax_kElectrons = 100 )
