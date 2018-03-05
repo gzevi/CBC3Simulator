@@ -14,7 +14,7 @@
 using namespace std;
 
 // Currently see no reason to modify these once they are set
-const int       NEvents = 1000; // Number of events for each RunTest call
+const int       NEvents = 10000; // Number of events for each RunTest call
 const int       Nck = 4; // Number of clock cycles
 const int       HipSuppress = 1; // 0 means don't suppress
 
@@ -25,8 +25,8 @@ int       DLL = 10; // DLL delay. If DLL=0, signal pulse starts at t=0. If DLL=1
 // Verbosity etc
 int       verbose = 0; // 0: none, 1: every event, 2: every clock, 3: every ns
 bool      diagnosticHistograms = false; // Make histograms for every event (reduce NEvents to avoid slowing down)
-bool      doVcthScan = true;
-bool      doDLLScan = true;
+bool      doVcthScan = false;
+bool      doDLLScan = false;
 bool      do2DScan = true;
 
 // best guess at shape of flandau 
@@ -40,6 +40,22 @@ double defCbc3PulseShapePars[5]={0,12.4,-12.,0.79,3};
 // Pulse shape peak for 2.5, 5, 7.5, 10 fC is ~ 100, 225, 325, 375 Vcth units 
 // MPV/width of Landau in beam test ~ 144/9 Vcth 
 ///////////////////////////////////////////////////
+
+// Function Parameters:
+// Gio
+// double LandauMPV = 144;
+// double LandauWidth = 9;
+// double GaussianPedestal = 0;
+// double GaussianWidth = 6;
+// Sarah
+// for the landau :  f->SetParameters(1, 143.652 , 7.09689)
+// for the gaussian noise : f->SetParameters(1, 0.266, 17.4744)
+double LandauMPV = 143.652;
+double LandauWidth = 7.09689;
+double GaussianPedestal = 0.266;
+double GaussianWidth = 17.4744;
+
+
 
 
 // first guess at more realistic CBC3 pulse shape
@@ -130,11 +146,11 @@ TF1* Function_PulseShapeCBC3(double charge, double* pars=defCbc3PulseShapePars, 
 
 
 
-TF1 *gaussianNoise() {
+TF1 *gaussianNoise(double ped = GaussianPedestal, double width = GaussianWidth) {
   // Use a gaussian around 0 (pedestal subtracted) with a noise of 6 Vcth
   // f(x) = p0*exp(-0.5*((x-p1)/p2)^2)
   TF1 *f = new TF1("f", "gaus", 0, 300);
-  f->SetParameters(1, 0, 6);
+  f->SetParameters(1, ped, width);
   f->SetParNames("Normalisation", "Mean (pedestal)", "Sigma (noise)");
   return f;
 }
@@ -162,14 +178,15 @@ TF1 * Function_Comparator(double* pars, TString pFuncName="f", double pXmin=0,do
   return f;
 }
 
-TF1 *Function_Landau() {
+TF1 *Function_Landau(double mpv = LandauMPV, double width = LandauWidth) {
   // Currently using a Landau in Vcth units, but could use fC and then scale the PreampShaper output
   TF1 *f = new TF1("f", "landau", 0, 300);
-  f->SetParameters(1, 144, 9);
+  f->SetParameters(1, mpv, width);
   f->SetParNames("Normalisation", "Most probably value", "Sigma");
   return f;
 }
 
+/*
 double Double_LanGaus(double *x, double *par) {
 
   // Fit parameters:
@@ -224,6 +241,7 @@ double Double_LanGaus(double *x, double *par) {
 
 }
 
+
 TF1 * Function_LanGaus() {
   // Currently using a Landau in Vcth units, but could use fC and then scale the PreampShaper output
   TF1* f = new TF1("f", "Double_LanGaus", 0, 300, 4);
@@ -236,6 +254,7 @@ TF1 * Function_LanGaus() {
   f->SetParNames("Landau width", "Most probably value", "Normalisation", "Gaussian noise");
   return f;
 }
+*/
 
 double Function_RC(double *x, double *par) {
 
@@ -367,9 +386,8 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
   gStyle->SetOptStat(0);
 
   //TF1 * landau = Function_LanGaus(); // This is the convolution!
-  TF1 * landau = Function_Landau();
+  TF1 * landau = Function_Landau(); 
   TF1 * noise = gaussianNoise(); 
-
   // Event looper
   for (int ievent = 0; ievent < NEvents; ievent++) {
     if (verbose>=1) cout<<"New Event"<<endl;
@@ -404,8 +422,8 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
     charge2 += Step0_GetNoise(noise);
 
     // Pulse shape function defined right after charge is known
-    TF1 * shape  = Function_PulseShape(charge,defPulseShapePars);
-    TF1 * shape2 = Function_PulseShape(charge2,defPulseShapePars);
+    TF1 * shape  = Function_PulseShapeCBC3(charge,defCbc3PulseShapePars);
+    TF1 * shape2 = Function_PulseShapeCBC3(charge2,defCbc3PulseShapePars);
 
 
     // Internal counters
@@ -521,7 +539,7 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
       h_hits->Write();
       h_hitsNextClock->Write();
     }
-
+    delete shape; delete shape2;
   } // End of event
 
   testDir->cd();
@@ -533,14 +551,16 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
   h_sumHitsInTwoClocks->GetYaxis()->SetRangeUser(0, h_sumHitsInTwoClocks->GetMaximum()*1.3);
  
 //  h_sumHits->Draw();
-  h_sumHits->Write();
-  h_sumHitsNextClock->Write();
-  h_sumHitsInTwoClocks->Write();
+//  h_sumHits->Write();
+//  h_sumHitsNextClock->Write();
+//  h_sumHitsInTwoClocks->Write();
 
   vector<TH1D*> v_h_sumHits;
   v_h_sumHits.push_back(h_sumHits);
   v_h_sumHits.push_back(h_sumHitsNextClock);
   v_h_sumHits.push_back(h_sumHitsInTwoClocks);
+
+  delete landau; delete noise;
 
   return v_h_sumHits;
 
