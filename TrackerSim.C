@@ -669,9 +669,22 @@ void measureRates(TString pFileName="./ToyMC_CBC3_test.root",  int pThreshold_DA
 	cHistTitle.Form("Time window for which Sampled mode gives 0 perc. fakes; Time [ns]; Threshold;");
 	TH2D* hSamplingWindow_Fakes_Sampled = new TH2D(cHistName.Data(),cHistTitle.Data(), nBunchCrossings*25 , 0 , nBunchCrossings*25 , (pThreshold_DAC_max-pThreshold_DAC_min)/pThreshold_DAC_step , pThreshold_DAC_min , pThreshold_DAC_max );
 	
+	
 	cHistName.Form("hSamplingWindow_SampledMode");
 	cHistTitle.Form("Time window for which Sampled mode gives 0 perc. fakes AND > 90 perc. efficiency; Time [ns]; Threshold;");
 	TH2D* hSamplingWindow_Sampled = new TH2D(cHistName.Data(),cHistTitle.Data(), nBunchCrossings*25 , 0 , nBunchCrossings*25 , (pThreshold_DAC_max-pThreshold_DAC_min)/pThreshold_DAC_step , pThreshold_DAC_min , pThreshold_DAC_max );
+	
+	cHistName.Form("hSamplingWindow_Eff_LatchedMode");
+	cHistTitle.Form("Time window for which Latched mode gives > 90 perc. efficiency; Time [ns]; Threshold;");
+	TH2D* hSamplingWindow_Eff_Latched = new TH2D(cHistName.Data(),cHistTitle.Data(), nBunchCrossings*25 , 0 , nBunchCrossings*25 , (pThreshold_DAC_max-pThreshold_DAC_min)/pThreshold_DAC_step , pThreshold_DAC_min , pThreshold_DAC_max );
+	
+	cHistName.Form("hSamplingWindow_Faked_LatchedMode");
+	cHistTitle.Form("Time window for which Latched mode gives 0 perc. fakes; Time [ns]; Threshold;");
+	TH2D* hSamplingWindow_Fakes_Latched = new TH2D(cHistName.Data(),cHistTitle.Data(), nBunchCrossings*25 , 0 , nBunchCrossings*25 , (pThreshold_DAC_max-pThreshold_DAC_min)/pThreshold_DAC_step , pThreshold_DAC_min , pThreshold_DAC_max );
+	
+	cHistName.Form("hSamplingWindow_LatchedMode");
+	cHistTitle.Form("Time window for which Latched mode gives 0 perc. fakes AND > 90 perc. efficiency; Time [ns]; Threshold;");
+	TH2D* hSamplingWindow_Latched = new TH2D(cHistName.Data(),cHistTitle.Data(), nBunchCrossings*25 , 0 , nBunchCrossings*25 , (pThreshold_DAC_max-pThreshold_DAC_min)/pThreshold_DAC_step , pThreshold_DAC_min , pThreshold_DAC_max );
 	
 
 	// first loop over threshold settings 
@@ -840,7 +853,7 @@ void measureRates(TString pFileName="./ToyMC_CBC3_test.root",  int pThreshold_DA
 
 			for( int tWithinBx = iBx*25 ; tWithinBx < (iBx+1)*25 ; tWithinBx++)
 			{
-				bool withinSamplWindow_Fakes = (tWithinBx >= tAccFakRate_Latched && tWithinBx <= tAccFakRate_Latched_End);
+				bool withinSamplWindow_Fakes = (tWithinBx >= tAccFakRate_Sampled && tWithinBx <= tAccFakRate_Sampled_End);
 				bool withinSamplWindow_Eff = (tWithinBx >= t_Sampled && tWithinBx <= t_Sampled_End);
 
 				if( withinSamplWindow_Eff )
@@ -852,6 +865,20 @@ void measureRates(TString pFileName="./ToyMC_CBC3_test.root",  int pThreshold_DA
 				{
 					hSamplingWindow_Sampled->Fill(tWithinBx, pThreshold_DAC);
 				}
+
+				withinSamplWindow_Fakes = (tWithinBx >= tAccFakRate_Latched && tWithinBx <= tAccFakRate_Latched_End);
+				withinSamplWindow_Eff = (tWithinBx >= t_Latched && tWithinBx <= t_Latched_End);
+
+				if( withinSamplWindow_Eff )
+					hSamplingWindow_Eff_Latched->Fill(tWithinBx, pThreshold_DAC);
+				if( withinSamplWindow_Fakes )
+					hSamplingWindow_Fakes_Latched->Fill(tWithinBx, pThreshold_DAC);
+
+				if( withinSamplWindow_Fakes && withinSamplWindow_Eff)
+				{
+					hSamplingWindow_Latched->Fill(tWithinBx, pThreshold_DAC);
+				}
+
 			}
 			//std::cout << "\n";
 			// cOut.Form("............... Bx%d - above acceptable efficiency between %.1f -- %.1f ns [sampled mode] , %.1f --- %.1f ns [latched mode]\n" , iBx, t_Sampled , t_Sampled_End, t_Latched , t_Latched_End );
@@ -885,6 +912,14 @@ void measureRates(TString pFileName="./ToyMC_CBC3_test.root",  int pThreshold_DA
 	hSamplingWindow_Fakes_Sampled->Write(cHistName.Data(), TObject::kOverwrite);
 	cHistName.Form("hSamplingWindow_SampledMode");
 	hSamplingWindow_Sampled->Write(cHistName.Data(), TObject::kOverwrite);
+
+	cHistName.Form("hSamplingWindow_Eff_LatchedMode");
+	hSamplingWindow_Eff_Latched->Write(cHistName.Data(), TObject::kOverwrite);
+	cHistName.Form("hSamplingWindow_Fakes_LatchedMode");
+	hSamplingWindow_Fakes_Latched->Write(cHistName.Data(), TObject::kOverwrite);
+	cHistName.Form("hSamplingWindow_LatchedMode");
+	hSamplingWindow_Latched->Write(cHistName.Data(), TObject::kOverwrite);
+
 	
 	cFile->Close();
 

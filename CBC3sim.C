@@ -48,15 +48,6 @@ double nFactorial(int n)
 {
   return TMath::Gamma(n+1);
 }
-double cFactor(double x, int N)
-{
-    double yValue=0;
-    for(int i = 0 ; i < N ; i++ )
-    {
-        yValue += std::pow(-1.,(double)(N-i))*std::pow(x,(double)i)*(nFactorial(N)/(nFactorial(i)*nFactorial(N-i)))*(1/nFactorial(i+2));
-    }
-    return yValue;
-}
 double cbc3PulsePolarExpansion(double x, double* par)
 {
     double xOffset = par[0];
@@ -105,18 +96,6 @@ double cbc3Pulse(double x , double* par)
 
     double xx = x - xOffset;
     return TMath::Exp(-xx/tau)*std::pow(xx/tau,2.)*cbc3PulsePolarExpansion(x, par);
-    
-    // for(int N = 0 ; N < Nmax ; N++)
-    // {
-    //     double cTerms=0;
-    //     for(int i = 0 ; i < N ; i++ )
-    //     {
-    //         cTerms += std::pow(c,(double)(N-i))*std::pow(s,(double)i)*cFactor(xx,i);
-    //     }
-    //     sum += std::pow(rho,(double)N)*cTerms;
-    // }
-
-    // return TMath::Exp(-1*xx)*std::pow(xx,2)*sum ;
 }
 double fPulseCBC3(double* x , double* par)
 {
