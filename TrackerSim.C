@@ -35,8 +35,12 @@ const double nTerms=3;
 const double cDeadTime_LatchedMode=2.7; // default is 2.7 in ns
 const double cDeadTime_SampledMode=0.3; // default is 0.3 in ns
 
+//some paramters that define "acceptable" efficiencies and fake rates
+const double cMinAcceptableEfficiency = 0.9; 
+const double cMaxAcceptableFakeRate = 0.0; 
+
 typedef std::pair<bool,bool> HitDetectStates;
-const bool ChargeSharing = true;
+const bool ChargeSharing = false;
 const double cSizeChargeSharingRegion=0.05*0.5; // default 0.01*0.5 ; 
 
 // pretty color palette?!
@@ -57,6 +61,7 @@ void set_plot_style()
 // from measured pulse shape using on-chip test pulse 
 void fitPulseShape(TString pFileName="./examplePulseShape_MIP_CBC3.root", double pPedestal_DACunits=598, double pUnc_Perc=5)
 {
+	TString cOut;
 	TString cHistName;
 	TH1D* hMeasuredPulse=0;
 	TFile* f = new TFile(pFileName,"READ");
@@ -106,6 +111,45 @@ void fitPulseShape(TString pFileName="./examplePulseShape_MIP_CBC3.root", double
 	hPulseShape_pSub->SetStats(0);
 	hPulseShape_pSub->DrawCopy("eHisto");
 	f1->Draw("same");
+
+	std::vector<double> aValues;aValues.clear();
+	std::vector<double> bValues;bValues.clear();
+	for( int i = 0 ; i < 2 ; i++ )
+	{	
+		double tauValue = f1->GetParameter(f1->GetParNumber("tau")) + std::pow(-1, (double)i)*f1->GetParError(f1->GetParNumber("tau"));
+		for( int j = 0 ; j < 2 ; j++ )
+		{
+			double rValue = f1->GetParameter(f1->GetParNumber("r")) + std::pow(-1, (double)j)*f1->GetParError(f1->GetParNumber("r"));
+			for( int k = 0 ; k < 2 ; k++ )
+			{
+				double thetaValue = f1->GetParameter(f1->GetParNumber("theta")) + std::pow(-1, (double)k)*f1->GetParError(f1->GetParNumber("theta"));
+				aValues.push_back( tauValue + rValue*std::cos(thetaValue) );
+				bValues.push_back( tauValue + rValue*std::sin(thetaValue) );
+				cOut.Form("tau = %.2f , theta = %.2f , r = %.2f : a = %.1f , b = %.1f\n", tauValue, thetaValue, rValue , aValues[aValues.size()-1] , bValues[bValues.size()-1]);
+				std::cout << cOut.Data();			
+			}
+		}
+	}
+	
+	double aAvgValue=0;
+	double bAvgValue=0;
+	for(int i = 0 ; i < (int)aValues.size(); i++)	
+	{
+		aAvgValue += aValues[i]/aValues.size();
+		bAvgValue += bValues[i]/aValues.size();
+	}
+	double aStdDev=0;
+	double bStdDev=0;
+	for(int i = 0 ; i < (int)aValues.size(); i++)	
+	{
+		aStdDev += std::pow(aValues[i]-aAvgValue,2.);
+		bStdDev += std::pow(bValues[i]-bAvgValue,2.);
+	}
+	aStdDev = std::sqrt(aStdDev)/(aValues.size()-1);
+	bStdDev = std::sqrt(bStdDev)/(bValues.size()-1);
+
+	cOut.Form("a = %.2f ± %.2f\t b = %.2f ± %.2f\n" , aAvgValue , aStdDev,  bAvgValue , bStdDev );
+	std::cout << cOut.Data();
 }
 // quick check of charge sharing 
 void testChargeSharing( double pLandauMPV_kElectrons=25, double pLandauWidth_kElectrons=2, double pNoise_kElectrons=0.8, double pEnergyMin_kElectrons = 0.0 , double pEnergyMax_kElectrons = 100 )
@@ -408,6 +452,9 @@ void populateComparator(TString pFileName="./ToyMC_test.root", int pThreshold_DA
 	int nBunchCrossings = hHits->GetXaxis()->GetNbins();
 	for( int pThreshold_DAC = pThreshold_DAC_min ; pThreshold_DAC < pThreshold_DAC_max  ; pThreshold_DAC +=pThreshold_DAC_step )
 	{
+		if( pThreshold_DAC == 0 )
+			continue;
+
 		cHistName.Form("hComp_Thresold%d_DACunits" , pThreshold_DAC );
 		cHistTitle.Form("Comparator State : Th = %d; Time [ns]; Channel Number [a.u]" ,pThreshold_DAC );
 		TH2D* hComparator = new TH2D( cHistName.Data() , cHistTitle.Data(), nBunchCrossings*25.0 , 0 , nBunchCrossings*25.0, nTotalNumberOfChannels , 0 , nTotalNumberOfChannels );
@@ -614,10 +661,25 @@ void measureRates(TString pFileName="./ToyMC_CBC3_test.root",  int pThreshold_DA
 	cHistTitle.Form("Time window for which Sampled mode gives 0 perc. fakes; Threshold; Window Size [ns]");
 	TProfile* hTimeWindow_zeroFakes_SampledAvg = new TProfile(cHistName.Data(),cHistTitle.Data(), (pThreshold_DAC_max-pThreshold_DAC_min)/pThreshold_DAC_step , pThreshold_DAC_min , pThreshold_DAC_max );
 	
+	cHistName.Form("hSamplingWindow_Eff_SampledMode");
+	cHistTitle.Form("Time window for which Sampled mode gives > 90 perc. efficiency; Time [ns]; Threshold;");
+	TH2D* hSamplingWindow_Eff_Sampled = new TH2D(cHistName.Data(),cHistTitle.Data(), nBunchCrossings*25 , 0 , nBunchCrossings*25 , (pThreshold_DAC_max-pThreshold_DAC_min)/pThreshold_DAC_step , pThreshold_DAC_min , pThreshold_DAC_max );
+	
+	cHistName.Form("hSamplingWindow_Faked_SampledMode");
+	cHistTitle.Form("Time window for which Sampled mode gives 0 perc. fakes; Time [ns]; Threshold;");
+	TH2D* hSamplingWindow_Fakes_Sampled = new TH2D(cHistName.Data(),cHistTitle.Data(), nBunchCrossings*25 , 0 , nBunchCrossings*25 , (pThreshold_DAC_max-pThreshold_DAC_min)/pThreshold_DAC_step , pThreshold_DAC_min , pThreshold_DAC_max );
+	
+	cHistName.Form("hSamplingWindow_SampledMode");
+	cHistTitle.Form("Time window for which Sampled mode gives 0 perc. fakes AND > 90 perc. efficiency; Time [ns]; Threshold;");
+	TH2D* hSamplingWindow_Sampled = new TH2D(cHistName.Data(),cHistTitle.Data(), nBunchCrossings*25 , 0 , nBunchCrossings*25 , (pThreshold_DAC_max-pThreshold_DAC_min)/pThreshold_DAC_step , pThreshold_DAC_min , pThreshold_DAC_max );
+	
 
 	// first loop over threshold settings 
 	for( int pThreshold_DAC = pThreshold_DAC_min ; pThreshold_DAC < pThreshold_DAC_max  ; pThreshold_DAC +=pThreshold_DAC_step )
 	{
+		if( pThreshold_DAC == 0 )
+			continue;
+
 		TH2D* hComparator=0;
 		cHistName.Form("hComp_Thresold%d_DACunits" , pThreshold_DAC );
 		cFile = new TFile(cFileName,"READ");
@@ -728,20 +790,72 @@ void measureRates(TString pFileName="./ToyMC_CBC3_test.root",  int pThreshold_DA
 
 
 		int iBin = hFakeRate_LatchedMode->GetYaxis()->FindBin(pThreshold_DAC);
-		TH1D* hFakesLatched = (TH1D*)hFakeRate_LatchedMode->ProjectionX("px",iBin,iBin);
-		TH1D* hFakesSampled = (TH1D*)hFakeRate_SampledMode->ProjectionX("px",iBin,iBin);
+		TH1D* hFakesLatched = (TH1D*)hFakeRate_LatchedMode->ProjectionX("pFakesLatched",iBin,iBin);
+		TH1D* hFakesSampled = (TH1D*)hFakeRate_SampledMode->ProjectionX("pFakesSampled",iBin,iBin);
+
+		iBin = hEfficiency_LatchedMode->GetYaxis()->FindBin(pThreshold_DAC);
+		TH1D* hEffSampled = (TH1D*)hEfficiency_SampledMode->ProjectionX("pEffSampled",iBin,iBin);
+		TH1D* hEffLatched = (TH1D*)hEfficiency_LatchedMode->ProjectionX("pEffLatched",iBin,iBin);
 		for( int iBx=1 ; iBx < nBunchCrossings ; iBx++ )
 		{
-			double t_Latched = findLastTimeAboveThreshold(hFakesLatched , 0.0, iBx*25,iBx*25+24.0);
-			double t_Sampled = findLastTimeAboveThreshold(hFakesSampled , 0.0, iBx*25,iBx*25+24.0);
+			double t_Latched = findLastTimeAboveThreshold(hFakesLatched , cMaxAcceptableFakeRate, iBx*25,iBx*25+24.0);
+			double t_Latched_End =(iBx+1)*25;
+			double tAccFakRate_Latched = t_Latched;
+			double tAccFakRate_Latched_End = (iBx+1)*25-1;
+			
+			double t_Sampled = findLastTimeAboveThreshold(hFakesSampled , cMaxAcceptableFakeRate, iBx*25,iBx*25+24.0);
+			double t_Sampled_End =(iBx+1)*25;
+			// for(int tAboveThreshold = (int)t_Sampled ; tAboveThreshold <= (int)t_Sampled_End ; tAboveThreshold++)
+			// {
+			// 	hSamplingWindow_Fakes_Sampled->Fill(tAboveThreshold, pThreshold_DAC);
+			// }
+			double tAccFakRate_Sampled = t_Sampled;
+			double tAccFakRate_Sampled_End = (iBx+1)*25-1;
+			
 			double twindow_Latched = (t_Latched>0) ? std::fabs((iBx+1)*25-t_Latched) : 25 ; 
 			double twindow_Sampled = (t_Sampled>0) ? std::fabs((iBx+1)*25-t_Sampled) : 25 ;
 			hTimeWindow_zeroFakes_Latched->Fill(iBx, pThreshold_DAC, twindow_Latched );
 			hTimeWindow_zeroFakes_LatchedAvg->Fill(pThreshold_DAC, twindow_Latched );
 			hTimeWindow_zeroFakes_Sampled->Fill(iBx, pThreshold_DAC, twindow_Sampled );
 			hTimeWindow_zeroFakes_SampledAvg->Fill(pThreshold_DAC, twindow_Sampled );
-			cOut.Form("............... Bx%d - size of acceptable window = %.3f ns[ latched mode ] %.3f ns [sampled mode]\n" , iBx, twindow_Latched , twindow_Sampled);
+			
+			t_Sampled = findFirstTimeAboveThreshold(hEffSampled , cMinAcceptableEfficiency, iBx*25,iBx*25+24.0);
+			t_Sampled_End = findLastTimeAboveThreshold(hEffSampled , cMinAcceptableEfficiency, iBx*25,iBx*25+24.0);
+			cOut.Form("............... Bx%d \n", iBx);
 			//std::cout << cOut.Data();
+			cOut.Form("............................................ in sampled mode : %.1f -- %.1f ns [eff] , below acceptable fake rate between %.1f -- %.1f ns [fakes] \n" ,  t_Sampled , t_Sampled_End , tAccFakRate_Sampled ,tAccFakRate_Sampled_End);
+			//std::cout << cOut.Data();
+			cOut.Form("............................................ in latched mode : %.1f -- %.1f ns [eff] , below acceptable fake rate between %.1f -- %.1f ns [fakes] \n" ,  t_Latched , t_Latched_End , tAccFakRate_Latched ,tAccFakRate_Latched_End);
+			//std::cout << cOut.Data();
+			//cOut.Form("............... ................ size of acceptable window = %.3f ns[ latched mode ] %.3f ns [sampled mode]\n" , twindow_Latched , twindow_Sampled);
+			//std::cout << cOut.Data();
+			
+			// //std::cout << cOut.Data();
+			// for(int tAboveThreshold = (int)t_Sampled ; tAboveThreshold <= (int)t_Sampled_End ; tAboveThreshold++)
+			// {
+			// 	hSamplingWindow_Eff_Sampled->Fill(tAboveThreshold, pThreshold_DAC);
+			// 	//cOut.Form("%d ns , ", tAboveThreshold );
+			// 	//std::cout << cOut.Data();
+			// }
+
+			for( int tWithinBx = iBx*25 ; tWithinBx < (iBx+1)*25 ; tWithinBx++)
+			{
+				bool withinSamplWindow_Fakes = (tWithinBx >= tAccFakRate_Latched && tWithinBx <= tAccFakRate_Latched_End);
+				bool withinSamplWindow_Eff = (tWithinBx >= t_Sampled && tWithinBx <= t_Sampled_End);
+
+				if( withinSamplWindow_Eff )
+					hSamplingWindow_Eff_Sampled->Fill(tWithinBx, pThreshold_DAC);
+				if( withinSamplWindow_Fakes )
+					hSamplingWindow_Fakes_Sampled->Fill(tWithinBx, pThreshold_DAC);
+
+				if( withinSamplWindow_Fakes && withinSamplWindow_Eff)
+				{
+					hSamplingWindow_Sampled->Fill(tWithinBx, pThreshold_DAC);
+				}
+			}
+			//std::cout << "\n";
+			// cOut.Form("............... Bx%d - above acceptable efficiency between %.1f -- %.1f ns [sampled mode] , %.1f --- %.1f ns [latched mode]\n" , iBx, t_Sampled , t_Sampled_End, t_Latched , t_Latched_End );
+			// std::cout << cOut.Data();
 		}
 	}
 	cFile = new TFile(cFileName,"UPDATE");
@@ -765,6 +879,13 @@ void measureRates(TString pFileName="./ToyMC_CBC3_test.root",  int pThreshold_DA
 	cHistName.Form("hAvgTimeWindow_LatchedMode");
 	hTimeWindow_zeroFakes_LatchedAvg->Write(cHistName.Data(), TObject::kOverwrite);
 
+	cHistName.Form("hSamplingWindow_Eff_SampledMode");
+	hSamplingWindow_Eff_Sampled->Write(cHistName.Data(), TObject::kOverwrite);
+	cHistName.Form("hSamplingWindow_Fakes_SampledMode");
+	hSamplingWindow_Fakes_Sampled->Write(cHistName.Data(), TObject::kOverwrite);
+	cHistName.Form("hSamplingWindow_SampledMode");
+	hSamplingWindow_Sampled->Write(cHistName.Data(), TObject::kOverwrite);
+	
 	cFile->Close();
 
 
@@ -787,10 +908,10 @@ void TrackerSimulation ( int pNmodules=20 , double pOccupancy=1e-2, int pNbunchC
     double cLandauWidth_DACunits = 7.09689;//
     double cNoise_DACunits = 17.4744;//
     double cPedestal_kElectrons = 2;//
-	populateHits(pFileName, nModules,pNbunchCrossings,pOccupancy,cMPcharge_DACunits*cConversion_CBC3,cLandauWidth_DACunits*cConversion_CBC3,cPedestal_kElectrons,cNoise_DACunits*cConversion_CBC3, cSizeChargeSharingRegion);
+	//populateHits(pFileName, nModules,pNbunchCrossings,pOccupancy,cMPcharge_DACunits*cConversion_CBC3,cLandauWidth_DACunits*cConversion_CBC3,cPedestal_kElectrons,cNoise_DACunits*cConversion_CBC3, cSizeChargeSharingRegion);
 	
 	// then fill comparator outputs [only need to do this once]
-	populateComparator(pFileName, pThreshold_DAC_min,pThreshold_DAC_max,pThreshold_DAC_step);
+	//populateComparator(pFileName, pThreshold_DAC_min ,pThreshold_DAC_max,pThreshold_DAC_step);
 	// figure out how long this took
 	auto end = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_seconds = end - start;
@@ -798,7 +919,7 @@ void TrackerSimulation ( int pNmodules=20 , double pOccupancy=1e-2, int pNbunchC
     cOut.Form ("It took %.3f mins to populate hits/comparators for this tracker with %d modules\n", elapsed_seconds.count() / 60.0 ,nModules);
     std::cout << cOut.Data();
     start = std::chrono::system_clock::now();
-	measureRates(pFileName, pThreshold_DAC_min , pThreshold_DAC_max , pThreshold_DAC_step*2 );
+	measureRates(pFileName,  pThreshold_DAC_min , pThreshold_DAC_max , pThreshold_DAC_step );
 	end = std::chrono::system_clock::now();
     elapsed_seconds = end - start;
     end_time = std::chrono::system_clock::to_time_t (end);
@@ -950,7 +1071,7 @@ void showEffect_chargeSharing(TString pFileName0="./20modules_noChargeSharing.ro
 	hEff_Sampled_wChargeSharing->SetTitle("P(detecting a hit) in sampled mode [w/ simple charge sharing model]");
 	hEff_Sampled_wChargeSharing->SetStats(0);
 	hEff_Sampled_wChargeSharing->GetXaxis()->SetRangeUser(25,50);
-	hEff_Sampled_wChargeSharing->GetYaxis()->SetRangeUser(0,200);
+	hEff_Sampled_wChargeSharing->GetYaxis()->SetRangeUser(5,200);
 	hEff_Sampled_wChargeSharing->GetZaxis()->SetRangeUser(0.95,1);
 	hEff_Sampled_wChargeSharing->DrawCopy("colz");
 	c1->cd(2);
@@ -958,7 +1079,7 @@ void showEffect_chargeSharing(TString pFileName0="./20modules_noChargeSharing.ro
 	hFakes_Sampled_wChargeSharing->SetTitle("P(Fake) in sampled mode [w/ simple charge sharing model]");
 	hFakes_Sampled_wChargeSharing->SetStats(0);
 	hFakes_Sampled_wChargeSharing->GetXaxis()->SetRangeUser(25,50);
-	hFakes_Sampled_wChargeSharing->GetYaxis()->SetRangeUser(0,200);
+	hFakes_Sampled_wChargeSharing->GetYaxis()->SetRangeUser(5,200);
 	hEff_Sampled_wChargeSharing->GetZaxis()->SetRangeUser(0.9,1);
 	hFakes_Sampled_wChargeSharing->DrawCopy("colz");
 	c1->cd(3);
@@ -966,7 +1087,7 @@ void showEffect_chargeSharing(TString pFileName0="./20modules_noChargeSharing.ro
 	hEff_Sampled_woutChargeSharing->SetTitle("P(detecting a hit) in sampled mode");
 	hEff_Sampled_woutChargeSharing->SetStats(0);
 	hEff_Sampled_woutChargeSharing->GetXaxis()->SetRangeUser(25,50);
-	hEff_Sampled_woutChargeSharing->GetYaxis()->SetRangeUser(0,200);
+	hEff_Sampled_woutChargeSharing->GetYaxis()->SetRangeUser(5,200);
 	hEff_Sampled_woutChargeSharing->GetZaxis()->SetRangeUser(0.95,1);
 	hEff_Sampled_woutChargeSharing->DrawCopy("colz");
 	c1->cd(4);
@@ -974,7 +1095,7 @@ void showEffect_chargeSharing(TString pFileName0="./20modules_noChargeSharing.ro
 	hFakes_Sampled_woutChargeSharing->SetTitle("P(Fake) in sampled mode");
 	hFakes_Sampled_woutChargeSharing->SetStats(0);
 	hFakes_Sampled_woutChargeSharing->GetXaxis()->SetRangeUser(25,50);
-	hFakes_Sampled_woutChargeSharing->GetYaxis()->SetRangeUser(0,200);
+	hFakes_Sampled_woutChargeSharing->GetYaxis()->SetRangeUser(5,200);
 	hFakes_Sampled_woutChargeSharing->GetZaxis()->SetRangeUser(1e-3,1);
 	hFakes_Sampled_woutChargeSharing->DrawCopy("colz");
 
