@@ -32,6 +32,7 @@ bool      do2DScan = true;
 // best guess at shape of flandau 
 double defLandauPars[3]={1.0, 144 , 9.0};
 double defPulseShapePars[4]={3, 4, 1, 0.0};
+double defCbc3PulseShapePars[5]={0,7.7,1e-3,TMath::PiOver2(),6};
 
 //////////// Some useful numbers: /////////////////
 // 1 Vcth ~ 130 electrons
@@ -39,6 +40,116 @@ double defPulseShapePars[4]={3, 4, 1, 0.0};
 // Pulse shape peak for 2.5, 5, 7.5, 10 fC is ~ 100, 225, 325, 375 Vcth units 
 // MPV/width of Landau in beam test ~ 144/9 Vcth 
 ///////////////////////////////////////////////////
+
+
+// first guess at more realistic CBC3 pulse shape
+// taken from S.Mersi's https://www.authorea.com/users/95964/articles/203155-analytic-description-of-a-pre-amplifier-pulse-response
+double nFactorial(int n)
+{
+  return TMath::Gamma(n+1);
+}
+double cFactor(double x, int N)
+{
+    double yValue=0;
+    for(int i = 0 ; i < N ; i++ )
+    {
+        yValue += std::pow(-1.,(double)(N-i))*std::pow(x,(double)i)*(nFactorial(N)/(nFactorial(i)*nFactorial(N-i)))*(1/nFactorial(i+2));
+    }
+    return yValue;
+}
+double cbc3PulsePolarExpansion(double x, double* par)
+{
+    double xOffset = par[0];
+    double tau = par[1];
+    double r = par[2];
+    double theta = par[3];
+    int nTerms = (int)par[4];
+  
+    double fN=0;
+    double xx = x - xOffset;
+    if( xx  < 0 )
+      return 0;
+
+    for( int i = 0 ; i < nTerms ; i++)
+    {
+      double angularTerm=0;
+      double temporalTerm=0;
+      double rTerm = std::pow(r,i)/(std::pow(tau,2.*i)*nFactorial(i+2));
+      for( int j = 0 ; j <= i ; j++ )
+      {
+        double aij = nFactorial(i)*nFactorial(i+2)/(nFactorial(i-j)*nFactorial(i+2-j)*nFactorial(j));
+        angularTerm += std::pow(std::cos(theta),(double)(i-j))*std::pow(std::sin(theta),(double)j);
+        temporalTerm += std::pow(-1., (double)j)*aij*std::pow(xx,(double)(i-j))*std::pow(tau,(double)j);
+      }
+      double fi = rTerm*angularTerm*temporalTerm;
+      
+      TString cOut;
+      cOut.Form("f%d = %.3f : rTerm = %.3f , f(theta) = %.3f , f(t) = %.3f\n", i, fi, rTerm, angularTerm , temporalTerm);
+      //std::cout << cOut.Data();
+
+      fN += fi;
+    }
+    return fN;
+}
+double cbc3Pulse(double x , double* par)
+{
+    double xOffset = par[0];
+    double tau = par[1];
+    double r = par[2];
+    double theta = par[3];
+    int nTerms = (int)par[4];
+
+    double c = tau;
+    double a = tau + r*std::cos(theta);
+    double b = tau + r*std::sin(theta);
+
+    double xx = x - xOffset;
+    return TMath::Exp(-xx/tau)*std::pow(xx/tau,2.)*cbc3PulsePolarExpansion(x, par);
+    
+    // for(int N = 0 ; N < Nmax ; N++)
+    // {
+    //     double cTerms=0;
+    //     for(int i = 0 ; i < N ; i++ )
+    //     {
+    //         cTerms += std::pow(c,(double)(N-i))*std::pow(s,(double)i)*cFactor(xx,i);
+    //     }
+    //     sum += std::pow(rho,(double)N)*cTerms;
+    // }
+
+    // return TMath::Exp(-1*xx)*std::pow(xx,2)*sum ;
+}
+double fPulseCBC3(double* x , double* par)
+{
+    double xOffset = par[0];
+    double tau = par[1];
+    double r = par[2];
+    double theta = par[3];
+    double nTerms = par[4];
+    double maxCharge = par[5];
+    //double baselineOffset = par[6];
+
+    double pulseShapePars[5]={xOffset, tau, r ,theta, nTerms};
+    return maxCharge*std::fabs(cbc3Pulse(x[0],pulseShapePars)) ;
+}
+TF1* Function_PulseShapeCBC3(double charge, double* pars=defCbc3PulseShapePars, TString pFuncName="f", double pXmin=0,double pXmax=300) 
+{
+  double xOffset = pars[0];
+  double tau = pars[1];
+  double r = pars[2];
+  double theta = pars[3];
+  double nTerms = pars[4];
+
+  double pulseShapePars[6]={xOffset, tau, r ,theta, nTerms, 1 };
+  TF1 *f = new TF1(pFuncName.Data() , fPulseCBC3, pXmin , pXmax , 6 );
+  f->SetParameters(pulseShapePars);
+  f->SetParNames("xOffset","tau","r","theta","k");
+  double cMax = f->GetMaximum();
+  double k = charge/cMax;
+  f->SetParameter(5,k);
+  return f;
+}
+
+
 
 TF1 *gaussianNoise() {
   // Use a gaussian around 0 (pedestal subtracted) with a noise of 6 Vcth
@@ -152,8 +263,10 @@ double Function_RC(double *x, double *par) {
   double N = par[0];
   double tau = par[1];
   double norm = par[2];
-  
-  double result =  norm / TMath::Gamma(N+1) * TMath::Power( (x[0]/tau), N) * TMath::Exp(-x[0] / tau);
+  double xOffset = par[3];
+
+  double xx = x[0]-xOffset;
+  double result =  norm / TMath::Gamma(N+1) * TMath::Power( (xx/tau), N) * TMath::Exp(-xx / tau);
   if (result < 0) result = 0;
   return result;
 

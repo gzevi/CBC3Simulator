@@ -34,7 +34,7 @@ double LanGauss(double* yValue , double* par)
     double x = par[3];
 
     double fLandau = (1/(sigmaLandau))*::ROOT::Math::landau_pdf( (yValue[0] - mpc)/sigmaLandau - xmpv_Landau); 
-    double fGaus = (1.0/std::sqrt(2*sigmaGaus*sigmaGaus*TMath::Pi()))*TMath::Exp( -0.5*std::pow((x-yValue[0])/sigmaGaus,2.0) );
+    double fGaus = (1.0/std::sqrt(2*sigmaGaus*sigmaGaus*TMath::Pi()))*std::exp( -0.5*std::pow((x-yValue[0])/sigmaGaus,2.0) );
     return fLandau*fGaus;
 
 }
@@ -117,3 +117,4 @@ double detResponse(double* x , double* par)
     return cNorm*ConvoluteLanGaus(x[0],parametersLanGaus);
     
 }
+

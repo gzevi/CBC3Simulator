@@ -24,13 +24,19 @@ const double cConversion_CBC3 = 133e-3; // in kElectrons
 const double nStages_CBC3=3; // # amplification stages
 const double tau_CBC3=4.; // in ns 
 const double tRiseTime_CBC3=2; // in ns
+// and some parameters for the default pulse shape (more realistic)
+const double tau_CBC3improv =7.7;
+const double r_CBC3improv=1e-3;
+const double theta_CBC3improv=TMath::PiOver2();
+const double nTerms=6;
+
 
 //some timing settings for the CBC3
 const double cDeadTime_LatchedMode=2.7; // default is 2.7 in ns
 const double cDeadTime_SampledMode=0.3; // default is 0.3 in ns
 
 typedef std::pair<bool,bool> HitDetectStates;
-const bool ChargeSharing = false;
+const bool ChargeSharing = true;
 const double cSizeChargeSharingRegion=0.05*0.5; // default 0.01*0.5 ; 
 
 // pretty color palette?!
@@ -46,7 +52,6 @@ void set_plot_style()
     TColor::CreateGradientColorTable(NRGBs, stops, red, green, blue, NCont);
     gStyle->SetNumberContours(NCont);
 }
-
 
 // quick check of charge sharing 
 void testChargeSharing( double pLandauMPV_kElectrons=25, double pLandauWidth_kElectrons=2, double pNoise_kElectrons=0.8, double pEnergyMin_kElectrons = 0.0 , double pEnergyMax_kElectrons = 100 )
@@ -247,13 +252,18 @@ void populateHits(TString pFileName="./ToyMC_test.root", int pNmodules=10, int p
 			if( std::fabs(0.5-std::fabs(xPosHit))  <= 0.25*cSizeChargeSharingRegion ) 
  				hEdeposited2_DAC->Fill( (eDep_TotalSecond/cConversion_CBC3) );
 				
- 			double parsAmp[]={nStages_CBC3, tau_CBC3 , 1.0 , iBx*25.0 };
-			//double parsAmp[]={0.0 , 1.0, nStages_CBC3, iBx*25.0 , tau_CBC3 };
+ 			//double parsAmp[]={nStages_CBC3, tau_CBC3 , 1.0 , iBx*25.0 };
+			double parsAmp[]={iBx*25.0 ,tau_CBC3improv,r_CBC3improv,theta_CBC3improv,nTerms};
+
 			TString cFuncName;
 	  		cFuncName.Form("fPostAmp_CBC3_Ch%d_Bx%d",channelNumber, iBx);
-	  		TF1* fSignal = Function_PulseShape((eDep_Total/cConversion_CBC3), parsAmp, cFuncName.Data() ,0.0 , nBunchCrossings*25);
+	  		TF1* fSignal = Function_PulseShapeCBC3((eDep_Total/cConversion_CBC3), parsAmp, cFuncName.Data() ,0.0 , nBunchCrossings*25);
+	  		//TF1* fSignal = Function_PulseShape((eDep_Total/cConversion_CBC3), parsAmp, cFuncName.Data() ,0.0 , nBunchCrossings*25);
 	  		cFuncName.Form("fPostAmp_CBC3_Ch%d_Bx%d",nSecondChannel, iBx);
-	  		TF1* fSignalSecond = Function_PulseShape((eDep_TotalSecond/cConversion_CBC3), parsAmp, cFuncName.Data() ,0.0 , nBunchCrossings*25);
+	  		TF1* fSignalSecond = 0;
+	  		if( ChargeSharing ) 
+	  			fSignalSecond = Function_PulseShapeCBC3((eDep_TotalSecond/cConversion_CBC3), parsAmp, cFuncName.Data() ,0.0 , nBunchCrossings*25);
+	  		//TF1* fSignalSecond = Function_PulseShape((eDep_TotalSecond/cConversion_CBC3), parsAmp, cFuncName.Data() ,0.0 , nBunchCrossings*25);
 	  		for(int iTimeBin = 0 ; iTimeBin < hPostAmplifier_wNoise->GetYaxis()->GetNbins() ;iTimeBin++)
 	 	 	{
 	 		 	double xValue = hPostAmplifier_wNoise->GetXaxis()->GetBinCenter(iTimeBin) - 0.5*hPostAmplifier_wNoise->GetXaxis()->GetBinWidth(iTimeBin) ;
@@ -705,8 +715,13 @@ void measureRates(TString pFileName="./ToyMC_CBC3_test.root",  int pThreshold_DA
 
 
 }
-void TrackerSimulation (TString pFileName="./100modules_noChargeSharing.root", double pOccupancy=1e-2, int pNmodules=20, int pNbunchCrossings=100, int pThreshold_DAC_min=0, int pThreshold_DAC_max=300, int pThreshold_DAC_step=5)
+void TrackerSimulation ( int pNmodules=20 , double pOccupancy=1e-2, int pNbunchCrossings=10, int pThreshold_DAC_min=0, int pThreshold_DAC_max=300, int pThreshold_DAC_step=5)
 { 
+
+	TString pFileName_Modifier= (ChargeSharing) ? "wChargeSharing" : "noChargeSharing";
+	TString pFileName; 
+	pFileName.Form("%dmodules_%s.root", pNmodules, pFileName_Modifier.Data()); 
+
 	TString cOut;
 	int nModules=pNmodules;
 	
@@ -721,7 +736,7 @@ void TrackerSimulation (TString pFileName="./100modules_noChargeSharing.root", d
 	populateHits(pFileName, nModules,pNbunchCrossings,pOccupancy,cMPcharge_DACunits*cConversion_CBC3,cLandauWidth_DACunits*cConversion_CBC3,cPedestal_kElectrons,cNoise_DACunits*cConversion_CBC3, cSizeChargeSharingRegion);
 	
 	// then fill comparator outputs [only need to do this once]
-	//populateComparator(pFileName, pThreshold_DAC_min,pThreshold_DAC_max,pThreshold_DAC_step);
+	populateComparator(pFileName, pThreshold_DAC_min,pThreshold_DAC_max,pThreshold_DAC_step);
 	// figure out how long this took
 	auto end = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_seconds = end - start;
@@ -729,7 +744,7 @@ void TrackerSimulation (TString pFileName="./100modules_noChargeSharing.root", d
     cOut.Form ("It took %.3f mins to populate hits/comparators for this tracker with %d modules\n", elapsed_seconds.count() / 60.0 ,nModules);
     std::cout << cOut.Data();
     start = std::chrono::system_clock::now();
-	//measureRates(pFileName, 0 , pThreshold_DAC_max , pThreshold_DAC_step*2 );
+	measureRates(pFileName, pThreshold_DAC_min , pThreshold_DAC_max , pThreshold_DAC_step*2 );
 	end = std::chrono::system_clock::now();
     elapsed_seconds = end - start;
     end_time = std::chrono::system_clock::to_time_t (end);
