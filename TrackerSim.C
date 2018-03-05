@@ -28,7 +28,7 @@ const double tRiseTime_CBC3=2; // in ns
 const double tau_CBC3improv =7.7;
 const double r_CBC3improv=1e-3;
 const double theta_CBC3improv=TMath::PiOver2();
-const double nTerms=6;
+const double nTerms=3;
 
 
 //some timing settings for the CBC3
@@ -53,6 +53,60 @@ void set_plot_style()
     gStyle->SetNumberContours(NCont);
 }
 
+// try and figure out best settings for comparator
+// from measured pulse shape using on-chip test pulse 
+void fitPulseShape(TString pFileName="./examplePulseShape_MIP_CBC3.root", double pPedestal_DACunits=598, double pUnc_Perc=10)
+{
+	TString cHistName;
+	TH1D* hMeasuredPulse=0;
+	TFile* f = new TFile(pFileName,"READ");
+	f->cd();
+	cHistName.Form("pulseShape_MIP");
+	f->GetObject (cHistName.Data() , hMeasuredPulse);
+	hMeasuredPulse->SetDirectory(0);  
+	f->Close();
+
+	//clone histogram to remove pedestal 
+	TH1D* hPulseShape_pSub = (TH1D*)hMeasuredPulse->Clone("pSubPulse");
+	hPulseShape_pSub->Reset();
+	double cMax = hMeasuredPulse->GetMaximum();
+	for(int i = 1 ; i <= hPulseShape_pSub->GetNbinsX() ;i++)
+	{
+		double cBinContent = hMeasuredPulse->GetBinContent(i);
+		if( cBinContent != 0)
+		{
+			hPulseShape_pSub->SetBinContent(i, (pPedestal_DACunits - cBinContent) );
+			hPulseShape_pSub->SetBinError(i, (pUnc_Perc*(pPedestal_DACunits - cBinContent)/100.) );
+		}
+	}
+
+	hPulseShape_pSub->SetStats(0);
+	hPulseShape_pSub->DrawCopy("eHisto");
+
+	TString cFuncName;
+	//first try and fit CRC
+	cFuncName.Form("fPulse_CRC"); 
+	double cNorm=cMax;
+	double parsAmp[]={nStages_CBC3, tau_CBC3 , cNorm , 10.0 };
+	TF1* f0 = new TF1(cFuncName.Data(), Function_RC, 0, 75.0, 4);
+  	f0->SetParameters(parsAmp);
+  	f0->SetLineColor(kBlue);
+	f0->FixParameter(3,10.0);
+	//hPulseShape_pSub->Fit(f0,"nr","",0,75);
+	//f0->Draw("same");
+	
+	cFuncName.Form("fPostAmp_CBC3");
+	double pulseShapePars[]={10.0 ,tau_CBC3improv,r_CBC3improv,theta_CBC3improv,nTerms, cMax};
+	TF1 *f1 = new TF1(cFuncName.Data() , fPulseCBC3,  0, 75.0 , 6 );
+  	f1->SetParameters(pulseShapePars);
+  	f1->SetParNames("xOffset","tau","r","theta", "nTerms","k");
+  	f1->FixParameter(4,nTerms);
+  	//f1->FixParameter(0,10);
+  	f1->SetParLimits(3,0,TMath::PiOver2());
+	hPulseShape_pSub->Fit(f1,"nr","",0,60);
+  	f1->Draw("same");
+
+}
 // quick check of charge sharing 
 void testChargeSharing( double pLandauMPV_kElectrons=25, double pLandauWidth_kElectrons=2, double pNoise_kElectrons=0.8, double pEnergyMin_kElectrons = 0.0 , double pEnergyMax_kElectrons = 100 )
 {

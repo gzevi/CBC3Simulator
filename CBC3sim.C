@@ -129,7 +129,7 @@ double fPulseCBC3(double* x , double* par)
     //double baselineOffset = par[6];
 
     double pulseShapePars[5]={xOffset, tau, r ,theta, nTerms};
-    return maxCharge*std::fabs(cbc3Pulse(x[0],pulseShapePars)) ;
+    return maxCharge*(cbc3Pulse(x[0],pulseShapePars)) ;
 }
 TF1* Function_PulseShapeCBC3(double charge, double* pars=defCbc3PulseShapePars, TString pFuncName="f", double pXmin=0,double pXmax=300) 
 {
