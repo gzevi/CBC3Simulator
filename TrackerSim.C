@@ -26,8 +26,8 @@ const double tau_CBC3=4.; // in ns
 const double tRiseTime_CBC3=2; // in ns
 // and some parameters for the default pulse shape (more realistic)
 const double tau_CBC3improv =12.4;
-const double r_CBC3improv=-12.0;
-const double theta_CBC3improv=0.79;//TMath::PiOver2();
+const double r_CBC3improv=-11.9;
+const double theta_CBC3improv=0.79;//*0.125;//TMath::PiOver2();
 const double nTerms=3;
 
 
@@ -37,10 +37,11 @@ const double cDeadTime_SampledMode=0.3; // default is 0.3 in ns
 
 //some paramters that define "acceptable" efficiencies and fake rates
 const double cMinAcceptableEfficiency = 0.9; 
-const double cMaxAcceptableFakeRate = 0.0; 
+const double cMaxAcceptableFakeRate = 5e-3; 
 
 typedef std::pair<bool,bool> HitDetectStates;
 const bool ChargeSharing = true;
+const bool cPhaseDist = false;
 const double cSizeChargeSharingRegion=0.05*0.5; // default 0.01*0.5 ; 
 
 // pretty color palette?!
@@ -89,43 +90,44 @@ void fitPulseShape(TString pFileName="./examplePulseShape_MIP_CBC3.root", double
 	//first try and fit CRC
 	cFuncName.Form("fPulse_CRC"); 
 	double cNorm=cMax;
-	//double parsAmp[]={nStages_CBC3, tau_CBC3 , cNorm , 10.0 };
-	//TF1* f0 = new TF1(cFuncName.Data(), Function_RC, 0, 75.0, 4);
-  	//f0->SetParameters(parsAmp);
-  	//f0->SetLineColor(kBlue);
-  	//hPulseShape_pSub->SetStats(0);
+	double pulseShapePars[5]={10.0 ,tau_CBC3improv,r_CBC3improv,theta_CBC3improv, cMax};
+	TF1* f0 = new TF1(cFuncName.Data(), fCbc3Pulse, 0, 25.0*10, 5);
+	f0->SetParNames("xOffset","tau","r","theta", "k");
+	f0->SetParLimits(f0->GetParNumber("theta"),0,TMath::PiOver2());
+	f0->SetParameters(pulseShapePars);
+  	f0->SetLineColor(kBlue);
+  	hPulseShape_pSub->SetStats(0);
 	//f0->FixParameter(3,10.0);
-	//hPulseShape_pSub->DrawCopy("eHisto");
-	//hPulseShape_pSub->Fit(f0,"nr","",0,70);
-	//f0->Draw("same");
-	//f0->Draw("same");
-	
-	cFuncName.Form("fPostAmp_CBC3");
-	double pulseShapePars[]={10.0 ,tau_CBC3improv,r_CBC3improv,theta_CBC3improv,nTerms, cMax};
-	TF1 *f1 = new TF1(cFuncName.Data() , fPulseCBC3,  0, 75.0 , 6 );
-  	f1->SetParameters(pulseShapePars);
-  	f1->SetParNames("xOffset","tau","r","theta", "nTerms","k");
-  	f1->FixParameter(4,nTerms);
-  	//f1->FixParameter(0,10);
-  	f1->SetParLimits(3,0,TMath::PiOver2());
-	TCanvas* c = new TCanvas("c","c",350,350);
-	c->cd(1);
-	hPulseShape_pSub->Fit(f1,"nr+","",0,60);
-	hPulseShape_pSub->SetStats(0);
 	hPulseShape_pSub->DrawCopy("eHisto");
-	f1->Draw("same");
+	hPulseShape_pSub->Fit(f0,"nr","",0,60);
+	f0->Draw("same");
+	
+	// cFuncName.Form("fPostAmp_CBC3");
+	// double pulseShapePars[]={10.0 ,tau_CBC3improv,r_CBC3improv,theta_CBC3improv,nTerms, cMax};
+	// TF1 *f1 = new TF1(cFuncName.Data() , fPulseCBC3,  0, 75.0 , 6 );
+ //  	f1->SetParameters(pulseShapePars);
+ //  	f1->SetParNames("xOffset","tau","r","theta", "nTerms","k");
+ //  	f1->FixParameter(4,nTerms);
+ //  	//f1->FixParameter(0,10);
+ //  	f1->SetParLimits(3,0,TMath::PiOver2());
+	// TCanvas* c = new TCanvas("c","c",350,350);
+	// c->cd(1);
+	// hPulseShape_pSub->Fit(f1,"nr+","",0,60);
+	// hPulseShape_pSub->SetStats(0);
+	// hPulseShape_pSub->DrawCopy("eHisto");
+	// f1->Draw("same");
 
 	std::vector<double> aValues;aValues.clear();
 	std::vector<double> bValues;bValues.clear();
 	for( int i = 0 ; i < 2 ; i++ )
 	{	
-		double tauValue = f1->GetParameter(f1->GetParNumber("tau")) + std::pow(-1, (double)i)*f1->GetParError(f1->GetParNumber("tau"));
+		double tauValue = f0->GetParameter(f0->GetParNumber("tau")) + std::pow(-1, (double)i)*f0->GetParError(f0->GetParNumber("tau"));
 		for( int j = 0 ; j < 2 ; j++ )
 		{
-			double rValue = f1->GetParameter(f1->GetParNumber("r")) + std::pow(-1, (double)j)*f1->GetParError(f1->GetParNumber("r"));
+			double rValue = f0->GetParameter(f0->GetParNumber("r")) + std::pow(-1, (double)j)*f0->GetParError(f0->GetParNumber("r"));
 			for( int k = 0 ; k < 2 ; k++ )
 			{
-				double thetaValue = f1->GetParameter(f1->GetParNumber("theta")) + std::pow(-1, (double)k)*f1->GetParError(f1->GetParNumber("theta"));
+				double thetaValue = f0->GetParameter(f0->GetParNumber("theta")) + std::pow(-1, (double)k)*f0->GetParError(f0->GetParNumber("theta"));
 				aValues.push_back( tauValue + rValue*std::cos(thetaValue) );
 				bValues.push_back( tauValue + rValue*std::sin(thetaValue) );
 				cOut.Form("tau = %.2f , theta = %.2f , r = %.2f : a = %.1f , b = %.1f\n", tauValue, thetaValue, rValue , aValues[aValues.size()-1] , bValues[bValues.size()-1]);
@@ -267,6 +269,11 @@ void populateHits(TString pFileName="./ToyMC_test.root", int pNmodules=10, int p
 	TF1* fNoise = new TF1("fNoise","[0]*TMath::Gaus(x,[1],[2],true)", pEnergyMin_kElectrons , pEnergyMax_kElectrons);
 	fNoise->SetParameters(parsNoise);
 
+	double pWidth_tDist=1.5;
+	double parsToA[]={1.0, 0.0, pWidth_tDist};
+	TF1* fToA = new TF1("fToA","[0]*TMath::Gaus(x,[1],[2],true)", 0 , 25);
+	fToA->SetParameters(parsToA);
+
 	int nBunchCrossings=pNbunchCrossings;
 	TH2D* hHits = new TH2D("hHits", "Channels with a particle strike ; Bunch Crossing ID [a.u.]; Channel Number", nBunchCrossings , 0 , nBunchCrossings, nTotalNumberOfChannels , 0 , nTotalNumberOfChannels ); 
 	TH2D* hClusters = new TH2D("hClusters", "Channels with a particle strike ; Bunch Crossing ID [a.u.]; Channel Number", nBunchCrossings , 0 , nBunchCrossings, nTotalNumberOfChannels*2.0 , 0 , nTotalNumberOfChannels ); 
@@ -279,6 +286,8 @@ void populateHits(TString pFileName="./ToyMC_test.root", int pNmodules=10, int p
 	TH1D* hHitPosition =  new TH1D("hHitPosition","Position Hits", 1.0/(0.1*cSizeChargeSharingRegion), -0.5 , 0.5 );
 	TH1D* hNoise_DAC =  new TH1D("hNoise_DACunits","Noise; Noise [DAC units]; Number of Entries", (int)(pEnergyMax_kElectrons/(0.1*cConversion_CBC3) - pEnergyMin_kElectrons/(cConversion_CBC3*0.1)) , pEnergyMin_kElectrons/cConversion_CBC3 , pEnergyMax_kElectrons/cConversion_CBC3 );
 	TH1D* hClusterSize = new TH1D("hClusterSize","Cluster Size; Cluster Size; Number of Entries" , 100 , 0 , 100);
+	TH1D* hToA_ns =  new TH1D("hToA_ns","Time of Arrival; Time [ns]; Number of Entries", 25/0.25 , 0 , 25);
+
 	TRandom3 myDice;
 	//  populate channels in modules with hits in each BX 
 	std::vector<int> cHits;cHits.clear();
@@ -329,7 +338,13 @@ void populateHits(TString pFileName="./ToyMC_test.root", int pNmodules=10, int p
  			eNoise = fNoise->GetRandom();//std::fabs(myDice.Gaus(0,pNoise_kElectrons));
  			double eDep_TotalSecond = eDep*(1-cFractionDepCharge) + eNoise;
  			
- 			
+ 			//time of arrival of particle w.r.t 40 MHz clock 
+ 			double tToA = (cPhaseDist) ? fToA->GetRandom() : 0;
+ 			cOut.Form("toA = %.2f ns\n", tToA);
+ 			//if( tToA < 0 )
+ 			//	std::cout << cOut.Data();
+ 			hToA_ns->Fill(tToA);
+
  			// fill histograms for this channel  
 			hHits->Fill(iBx,channelNumber);
 			hDepositedCharge_wNoise->Fill(iBx, channelNumber, eDep_Total/cConversion_CBC3  );
@@ -354,16 +369,15 @@ void populateHits(TString pFileName="./ToyMC_test.root", int pNmodules=10, int p
  				hEdeposited2_DAC->Fill( (eDep_TotalSecond/cConversion_CBC3) );
 				
  			//double parsAmp[]={nStages_CBC3, tau_CBC3 , 1.0 , iBx*25.0 };
-			double parsAmp[]={iBx*25.0 ,tau_CBC3improv,r_CBC3improv,theta_CBC3improv,nTerms};
-
+			double parsAmp[]={iBx*25.0 + tToA,tau_CBC3improv,r_CBC3improv,theta_CBC3improv};//,nTerms};
 			TString cFuncName;
 	  		cFuncName.Form("fPostAmp_CBC3_Ch%d_Bx%d",channelNumber, iBx);
-	  		TF1* fSignal = Function_PulseShapeCBC3((eDep_Total/cConversion_CBC3), parsAmp, cFuncName.Data() ,0.0 , nBunchCrossings*25);
+	  		TF1* fSignal = Function_PulseShapeCBC3_fast((eDep_Total/cConversion_CBC3), parsAmp, cFuncName.Data() ,0.0 , nBunchCrossings*25);
 	  		//TF1* fSignal = Function_PulseShape((eDep_Total/cConversion_CBC3), parsAmp, cFuncName.Data() ,0.0 , nBunchCrossings*25);
 	  		cFuncName.Form("fPostAmp_CBC3_Ch%d_Bx%d",nSecondChannel, iBx);
 	  		TF1* fSignalSecond = 0;
 	  		if( ChargeSharing ) 
-	  			fSignalSecond = Function_PulseShapeCBC3((eDep_TotalSecond/cConversion_CBC3), parsAmp, cFuncName.Data() ,0.0 , nBunchCrossings*25);
+	  			fSignalSecond = Function_PulseShapeCBC3_fast((eDep_TotalSecond/cConversion_CBC3), parsAmp, cFuncName.Data() ,0.0 , nBunchCrossings*25);
 	  		//TF1* fSignalSecond = Function_PulseShape((eDep_TotalSecond/cConversion_CBC3), parsAmp, cFuncName.Data() ,0.0 , nBunchCrossings*25);
 	  		for(int iTimeBin = 0 ; iTimeBin < hPostAmplifier_wNoise->GetYaxis()->GetNbins() ;iTimeBin++)
 	 	 	{
@@ -406,6 +420,7 @@ void populateHits(TString pFileName="./ToyMC_test.root", int pNmodules=10, int p
 	hHitPosition->Write("hHitPositions", TObject::kOverwrite);
 	hNoise_DAC->Write("hNoise_DACunits", TObject::kOverwrite);
 	hClusterSize->Write("hClusterSize", TObject::kOverwrite);
+	hToA_ns->Write("hToA_ns", TObject::kOverwrite);
 	f->Close();
 	
 }
@@ -453,7 +468,7 @@ void populateComparator(TString pFileName="./ToyMC_test.root", int pThreshold_DA
 	
 	int nTotalNumberOfChannels = hHits->GetYaxis()->GetNbins();
 	int nBunchCrossings = hHits->GetXaxis()->GetNbins();
-	for( int pThreshold_DAC = pThreshold_DAC_min ; pThreshold_DAC < pThreshold_DAC_max  ; pThreshold_DAC +=pThreshold_DAC_step )
+	for( int pThreshold_DAC = pThreshold_DAC_min ; pThreshold_DAC <= pThreshold_DAC_max  ; pThreshold_DAC +=pThreshold_DAC_step )
 	{
 		if( pThreshold_DAC == 0 )
 			continue;
@@ -923,13 +938,16 @@ void measureRates(TString pFileName="./ToyMC_CBC3_test.root",  int pThreshold_DA
 
 
 }
-void TrackerSimulation ( int pNmodules=20 , double pOccupancy=1e-2, int pNbunchCrossings=10, int pThreshold_DAC_min=0, int pThreshold_DAC_max=300, int pThreshold_DAC_step=5)
+void TrackerSimulation ( int pNmodules=200 , double pOccupancy=1e-2, int pNbunchCrossings=5, int pThreshold_DAC_min=0, int pThreshold_DAC_max=300, int pThreshold_DAC_step=2)
 { 
 
 	TString pFileName_Modifier= (ChargeSharing) ? "wChargeSharing" : "noChargeSharing";
 	TString pFileName; 
-	pFileName.Form("%dmodules_%s.root", pNmodules, pFileName_Modifier.Data()); 
-
+	if( cPhaseDist )
+		pFileName.Form("%dmodules_%s.root", pNmodules, pFileName_Modifier.Data()); 
+	else
+		pFileName.Form("%dmodules_%s_allInPhase.root", pNmodules, pFileName_Modifier.Data()); 
+		
 	TString cOut;
 	int nModules=pNmodules;
 	
@@ -944,7 +962,7 @@ void TrackerSimulation ( int pNmodules=20 , double pOccupancy=1e-2, int pNbunchC
 	//populateHits(pFileName, nModules,pNbunchCrossings,pOccupancy,cMPcharge_DACunits*cConversion_CBC3,cLandauWidth_DACunits*cConversion_CBC3,cPedestal_kElectrons,cNoise_DACunits*cConversion_CBC3, cSizeChargeSharingRegion);
 	
 	// then fill comparator outputs [only need to do this once]
-	//populateComparator(pFileName, pThreshold_DAC_min ,pThreshold_DAC_max,pThreshold_DAC_step);
+	populateComparator(pFileName, pThreshold_DAC_min ,pThreshold_DAC_max,pThreshold_DAC_step);
 	// figure out how long this took
 	auto end = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_seconds = end - start;
@@ -952,7 +970,7 @@ void TrackerSimulation ( int pNmodules=20 , double pOccupancy=1e-2, int pNbunchC
     cOut.Form ("It took %.3f mins to populate hits/comparators for this tracker with %d modules\n", elapsed_seconds.count() / 60.0 ,nModules);
     std::cout << cOut.Data();
     start = std::chrono::system_clock::now();
-	measureRates(pFileName,  pThreshold_DAC_min , pThreshold_DAC_max , pThreshold_DAC_step );
+	//measureRates(pFileName,  pThreshold_DAC_min , pThreshold_DAC_max , pThreshold_DAC_step*2 );
 	end = std::chrono::system_clock::now();
     elapsed_seconds = end - start;
     end_time = std::chrono::system_clock::to_time_t (end);
@@ -1170,6 +1188,48 @@ void showEffect_chargeSharing(TString pFileName0="./20modules_noChargeSharing.ro
 	lLimit->SetLineColor(kBlack);
 	lLimit->Draw("same");
 	
+}
+TCanvas* showPulseShape(TString pFileName="./50modules_wChargeSharing.root")
+{
+	TString cCanvasName, cCanvasTitle;
+	TString cHistName, cHistTitle;
+	TString cOut;
+	
+	TH2D* hPostAmplifier_wNoise=0;
+	
+	TFile* cFile = new TFile(pFileName,"READ");
+	cHistName.Form("hPostAmplifierOutput_perCh_perBx");
+	cFile->GetObject (cHistName.Data() , hPostAmplifier_wNoise);
+	hPostAmplifier_wNoise->SetDirectory(0);  
+	cFile->Close();
+
+	TCanvas* c = new TCanvas("c","c",350,350);
+	c->cd();
+	int cNevents=0;
+	int cChannel=0;
+	do
+	{
+		int iBin = hPostAmplifier_wNoise->GetYaxis()->FindBin(cChannel);
+		TH1D* h = (TH1D*)hPostAmplifier_wNoise->ProjectionX(Form("hPA_ch%d",cChannel),iBin,iBin);
+		int iBin0 = h->GetXaxis()->FindBin(0.);
+		int iBin1 = h->GetXaxis()->FindBin(24.);
+		
+		if( h->Integral(iBin0,iBin1) > 0 )
+		{
+			h->GetYaxis()->SetTitle("Signal [DAC units]");
+			h->GetYaxis()->SetRangeUser(-10,700);
+			h->SetLineColor(cNevents+1);
+			h->SetStats(0);
+			if( cNevents == 0 )
+				h->DrawCopy("hist");
+			else
+				h->DrawCopy("histSAME");
+			cNevents++;
+		}
+		cChannel++;
+	}while( cNevents < 20);
+	return c;
+
 }
 // void showExpectedScurve(TString pFileName="./20modules_noChargeSharing.root", int pNbunchCrossings =10 )
 // {

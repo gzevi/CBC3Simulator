@@ -64,6 +64,72 @@ double nFactorial(int n)
 {
   return TMath::Gamma(n+1);
 }
+double aScalingConstant( int N , int i)
+{
+  double ai = std::pow(-1,(double)i)*nFactorial(N)*nFactorial(N+2)/(nFactorial(N-i)*nFactorial(N+2-i)*nFactorial(i));
+  return ai;
+}
+// this assumes expanding to three terms exactly
+double cbc3PulseSimple(double x , double* par)
+{
+  double xOffset = par[0];
+  double tau = par[1];
+  double r = par[2];
+  double theta = par[3];
+  
+  double xx = x - xOffset;
+  if( xx  < 0 )
+     return 0.;
+  
+
+  double c = std::cos(theta);
+  double s = std::sin(theta);
+  double angTerm1 = c + s ;
+  double angTerm2 = std::pow(c,2.) + c*s + std::pow(s,2.0);
+
+  int N = 0;
+  N +=1;
+  double rTerm1 = std::pow( r/std::pow(tau,2.) , (double)N)*1./nFactorial(N+2);
+  double tTerm1 = aScalingConstant(N,0)*std::pow(xx,1)*std::pow(tau,0) + aScalingConstant(N,1)*std::pow(xx,0)*std::pow(tau,1);
+  N +=1;
+  double rTerm2 = std::pow( r/std::pow(tau,2.) , (double)N)*1./nFactorial(N+2);
+  double tTerm2 = aScalingConstant(N,0)*std::pow(xx,2)*std::pow(tau,0) + aScalingConstant(N,1)*std::pow(xx,1)*std::pow(tau,1) + aScalingConstant(N,2)*std::pow(xx,0)*std::pow(tau,2);
+
+  double f0 = 0.5;
+  double f1 = (std::pow(r,1.)/(std::pow(tau,2.)*6))*angTerm1*tTerm1; //rTerm1*angTerm1*tTerm1;
+  double f2 = (std::pow(r,2.)/(std::pow(tau,4.)*24))*angTerm2*tTerm2; //rTerm2*angTerm2*tTerm2;
+  return (f0 + f1 + f2)*TMath::Exp(-xx/tau)*std::pow(xx/tau,2.);
+  
+}
+double fCbc3Pulse(double* x , double* par)
+{
+    double xOffset = par[0];
+    double tau = par[1];
+    double r = par[2];
+    double theta = par[3];
+    double pulseShapePars[4]={xOffset, tau, r ,theta};
+
+    double cScaling = par[4];
+    return cScaling*cbc3PulseSimple(x[0],pulseShapePars);
+}
+TF1* Function_PulseShapeCBC3_fast(double charge, double* pars=defCbc3PulseShapePars, TString pFuncName="f", double pXmin=0,double pXmax=300) 
+{
+  double xOffset = pars[0];
+  double tau = pars[1];
+  double r = pars[2];
+  double theta = pars[3];
+
+  double pulseShapePars[5]={xOffset, tau, r ,theta, 1 };
+  TF1 *f = new TF1(pFuncName.Data() , fCbc3Pulse, pXmin , pXmax , 5 );
+  f->SetParameters(pulseShapePars);
+  f->SetParNames("xOffset","tau","r","theta", "k");
+  double cMax = f->GetMaximum();
+  double k = charge/cMax;
+  f->SetParameter(f->GetParNumber("k"),k);
+  return f;
+}
+
+// generic expression for expanding to N terms 
 double cbc3PulsePolarExpansion(double x, double* par)
 {
     double xOffset = par[0];
@@ -92,7 +158,7 @@ double cbc3PulsePolarExpansion(double x, double* par)
       
       TString cOut;
       cOut.Form("f%d = %.3f : rTerm = %.3f , f(theta) = %.3f , f(t) = %.3f\n", i, fi, rTerm, angularTerm , temporalTerm);
-      //std::cout << cOut.Data();
+      std::cout << cOut.Data();
 
       fN += fi;
     }
@@ -143,6 +209,7 @@ TF1* Function_PulseShapeCBC3(double charge, double* pars=defCbc3PulseShapePars, 
   f->SetParameter(5,k);
   return f;
 }
+
 
 
 
