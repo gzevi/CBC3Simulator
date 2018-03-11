@@ -40,8 +40,8 @@ const double cMinAcceptableEfficiency = 0.9;
 const double cMaxAcceptableFakeRate = 5e-3; 
 
 typedef std::pair<bool,bool> HitDetectStates;
-const bool ChargeSharing = true;
-const bool cPhaseDist = false;
+const bool ChargeSharing = false;
+const bool cPhaseDist = true;
 const double cSizeChargeSharingRegion=0.05*0.5; // default 0.01*0.5 ; 
 
 // pretty color palette?!
@@ -938,7 +938,7 @@ void measureRates(TString pFileName="./ToyMC_CBC3_test.root",  int pThreshold_DA
 
 
 }
-void TrackerSimulation ( int pNmodules=200 , double pOccupancy=1e-2, int pNbunchCrossings=5, int pThreshold_DAC_min=0, int pThreshold_DAC_max=300, int pThreshold_DAC_step=2)
+void TrackerSimulation ( int pNmodules=40 , double pOccupancy=1e-2, int pNbunchCrossings=5, int pThreshold_DAC_min=0, int pThreshold_DAC_max=300, int pThreshold_DAC_step=10)
 { 
 
 	TString pFileName_Modifier= (ChargeSharing) ? "wChargeSharing" : "noChargeSharing";
@@ -970,7 +970,7 @@ void TrackerSimulation ( int pNmodules=200 , double pOccupancy=1e-2, int pNbunch
     cOut.Form ("It took %.3f mins to populate hits/comparators for this tracker with %d modules\n", elapsed_seconds.count() / 60.0 ,nModules);
     std::cout << cOut.Data();
     start = std::chrono::system_clock::now();
-	//measureRates(pFileName,  pThreshold_DAC_min , pThreshold_DAC_max , pThreshold_DAC_step*2 );
+	measureRates(pFileName,  pThreshold_DAC_min , pThreshold_DAC_max , pThreshold_DAC_step*2 );
 	end = std::chrono::system_clock::now();
     elapsed_seconds = end - start;
     end_time = std::chrono::system_clock::to_time_t (end);
