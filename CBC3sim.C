@@ -7,6 +7,7 @@
 #include "TCanvas.h"
 #include "TH1.h"
 #include "TH2.h"
+#include "TH3.h"
 #include "TAxis.h"
 #include "TLegend.h"
 #include "TRandom3.h"
@@ -28,7 +29,8 @@ int       verbose = 0; // 0: none, 1: every event, 2: every clock, 3: every ns
 bool      diagnosticHistograms = false; // Make histograms for every event (reduce NEvents to avoid slowing down)
 bool      doVcthScan = true;
 bool      doDLLScan = false;
-bool      do2DScan = true;
+bool      do2DScan = false;
+bool      do2DScanFast = true;
 
 // best guess at shape of flandau 
 double defLandauPars[3]={1.0, 144 , 9.0};
@@ -492,7 +494,7 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
     // TF1 * shape  = Function_PulseShape(charge,defPulseShapePars);
     // TF1 * shape2 = Function_PulseShape(charge2,defPulseShapePars);
     // Stefano's shape (slow)
-    TF1 * shape  = Function_PulseShapeCBC3_fast(charge,defCbc3PulseShapeParsTheta0p1);
+    TF1 * shape  = Function_PulseShapeCBC3_fast(charge,defCbc3PulseShapePars);
     TF1 * shape2 = (TF1*) shape->Clone("shape2"); // If not using double hits, avoid calculating another shape
 
 
@@ -629,7 +631,7 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
   h_sumHitsInEitherClocks->Scale(1./NEvents);
   h_sumHitsInEitherClocks->GetYaxis()->SetRangeUser(0, h_sumHitsInEitherClocks->GetMaximum()*1.3);
 
-//  h_sumHits->Draw();
+  //  h_sumHits->Draw();
   h_sumHits->Write();
   h_sumHitsNextClock->Write();
   h_sumHitsInTwoClocks->Write();
@@ -647,9 +649,130 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
 
 } // End of RunTest
 
+
+// Function just runs digital logic, given a pulse shape
+void RunDigitalLogicOneEvent (TH2D * h_sumHits, TF1 * shape) {
+
+  h_sumHits->Reset();
+  // Internal counters
+  bool comparatorOutputPreviousNanosecond = false;
+  int  HIPcountSampled = 0;
+  int  HIPcountOR = 0;
+
+  // Flags for found hits
+  bool foundSampledHitThisClock = false;
+  bool foundLatchedHitThisClock = false;
+  bool foundLatchedHitNextClock = false;
+
+  // Count hits over several clock cycles: 
+  int countSampledHits = 0;
+  int countLatchedHits = 0;
+  int countORHits = 0;
+  int countSampledHIPHits = 0;
+  int countORHIPHits = 0;
+
+  // Loop over clock cycles
+  for (int ick = -1; ick < Nck-1; ick++) {
+
+    if (verbose>=2) cout<<"Clock cycle "<<ick<<endl;
+
+    foundLatchedHitThisClock = foundLatchedHitNextClock;
+    foundSampledHitThisClock = false;
+    foundLatchedHitNextClock = false;
+
+    if (verbose>=3) cout << "ns \t Voltage \t Comparator "<<endl;
+    // Loop inside a clock cycle
+    for (int ins = 0; ins <= 24; ins++) {
+
+      int coarsePlusFineTime = ins + ick*25;
+
+      float voltage = Step1_PreampShaper( coarsePlusFineTime, shape );
+      bool comp = Step2_Comparator( voltage, Vcth );
+
+      if ( !foundSampledHitThisClock ) foundSampledHitThisClock = Step3_HitDetectSampled( comp, ins );
+      if ( !foundLatchedHitNextClock ) foundLatchedHitNextClock = Step3_HitDetectLatched( comp, ins, comparatorOutputPreviousNanosecond );
+
+      if (verbose>=3) cout << coarsePlusFineTime << " \t " << voltage << "\t\t" << comp << endl;
+
+      comparatorOutputPreviousNanosecond = comp;
+    } // End of clock cycle
+
+    bool foundORHit = ( foundLatchedHitThisClock || foundSampledHitThisClock );
+    bool foundSampledHitHIP = Step4_HIPSuppress( foundSampledHitThisClock, HIPcountSampled );
+    bool foundORHitHIP      = Step4_HIPSuppress( foundORHit, HIPcountOR );
+
+    // HIP counters
+    HIPcountSampled = foundSampledHitThisClock  ? HIPcountSampled+1 : 0;
+    HIPcountOR      = foundORHit                ? HIPcountOR+1      : 0;
+
+    // Hit counters
+    if (foundSampledHitThisClock)    h_sumHits->Fill(1, ick+2 );  
+    if (foundLatchedHitThisClock)    h_sumHits->Fill(2, ick+2 );   
+    if (foundORHit)                  h_sumHits->Fill(3, ick+2 );     
+    if (foundSampledHitHIP)          h_sumHits->Fill(4, ick+2 );     
+    if (foundORHitHIP)               h_sumHits->Fill(5, ick+2 );                
+
+    if (verbose>=2) cout<<"CK\tSampled\tLatched\tOR   SampledHIP\tORHIP  [LatchedNextCock]"<<endl;
+    if (verbose>=2) cout<<ick<<" \t "<<foundSampledHitThisClock<<" \t "<<foundLatchedHitThisClock<<" \t "<<foundORHit<<" \t "<<foundSampledHitHIP<<" \t "<<foundORHitHIP<<" \t "<<foundLatchedHitNextClock << endl;
+
+
+  } // End of clock
+
+  //h_sumHits->Scale(1./NEvents);
+
+  return;
+
+} // End of RunDigitalLogicOneEvent
+
+
+TH3D* RunVcthScan (TDirectory * f, int vcthStart, int vcthStep, int vcthRange) {
+  f->cd();
+
+  TH3D * h3_vcthScan = new TH3D(Form("ThresholdScan3D_DLL%i", DLL), "ThresholdScan", (int) vcthRange/vcthStep, vcthStart, vcthStart+vcthRange, 5, 0.5, 5.5, Nck, 0.5, Nck+0.5);
+  TH2D * h_sumHits = new TH2D("SumHitsNckVsMode", "SumHitsNckVsMode", 5, 0.5, 5.5, Nck, 0.5, Nck+0.5);
+
+
+  // Event looper
+  for (int ievent = 0; ievent < NEvents; ievent++) {
+    if (verbose>=1) cout<<"New Event"<<endl;
+
+    // Get the charge randomly from the landau
+    float charge = Step0_GetCharge(landau); 
+    //float charge2 = Step0_GetCharge(landau); 
+
+    // Add a random noise to the charge
+    //charge += Step0_GetNoise(noise);
+    //charge2 += Step0_GetNoise(noise);
+
+    TF1 * shape  = Function_PulseShapeCBC3_fast(charge,defCbc3PulseShapePars);
+    //TF1 * shape2 = (TF1*) shape->Clone("shape2"); // If not using double hits, avoid calculating another shape
+
+    // We have a random charge and a well-defined shape. Now we could abstract the digital logic into a separate function, 
+    // and run it as many times as we want, as long as we don't want to change the pulse shape (with beta or DLL)
+    for (int i = 0; i <= vcthRange; i += vcthStep) {
+      Vcth = vcthStart + i;
+      int vcthBin = h3_vcthScan->GetXaxis()->FindBin(Vcth+0.01);
+
+      RunDigitalLogicOneEvent (h_sumHits, shape);
+      f->cd();
+      for (int ibin = 1; ibin <= 5; ibin++ ) {
+        for (int jbin = 1; jbin <= Nck; jbin++ ) {
+          h3_vcthScan->Fill(Vcth, ibin, jbin, h_sumHits->GetBinContent(ibin, jbin));          
+        }
+      }
+    }
+  } // End of event loop
+  delete h_sumHits;
+  h3_vcthScan->Scale(1./NEvents);
+  return h3_vcthScan;
+
+} // End of RunVcthScan
+
+
+
 void CBC3sim () {
 
-  TFile * f = new TFile("TestSimShapeTheta1p0.root", "RECREATE");
+  TFile * f = new TFile("TestSim.root", "RECREATE");
   f->cd();
 
   // Threshold scan
@@ -677,6 +800,36 @@ void CBC3sim () {
     }
     cout<<endl;
   }
+
+  // Fast threshold scan
+  vcthStart = 20;
+  vcthRange = 180;
+  vcthStep = 2;
+  DLL = 15;
+  TDirectory * VcthDirFast = f->mkdir(Form("ThresholdScanFast_DLL%i", DLL));
+  VcthDirFast->cd();
+  TH2D * h2_vcthScanFast =0;
+  if (doVcthScan) {
+    cout<<"Running Fast Vcth scan at DLL "<<DLL<<"..."<<endl;
+      VcthDirFast->cd();
+
+    TH3D* h3_vcthScan = RunVcthScan ( VcthDirFast, vcthStart,  vcthStep,  vcthRange);
+    h3_vcthScan->Write();
+    cout<<"... Done"<<endl;
+
+    TH2D * h2_vcthScanFast =0;
+    for (int ibin = 1; ibin <= Nck; ibin++) {
+      h3_vcthScan->GetZaxis()->SetRange(ibin, ibin);
+      h2_vcthScanFast = h2_vcthScanFast = (TH2D*) h3_vcthScan->Project3D("xy");
+      h2_vcthScanFast->SetNameTitle(Form("ThresholdScanFastBX%i_DLL%i", ibin, DLL), "ThresholdScan");
+      labelAxis(h2_vcthScanFast->GetXaxis());
+      h2_vcthScanFast->Write();
+    }
+  }
+  f->cd();
+
+
+
 
   // Timing scan
   Vcth = 20; // Reset Vcth to nominal
@@ -706,6 +859,64 @@ void CBC3sim () {
     }
     cout<<endl;
   }
+
+  // 2D scan fast
+  TDirectory * TwoDDirFast = f->mkdir("2DScanFast");
+  TwoDDirFast->cd();
+  vcthStart = 20;
+  vcthRange = 180;
+  vcthStep = 2;
+  DLLStart = -25;
+  DLLRange = 75;
+  DLLStep = 1;
+
+
+  TH2D * h_2DScanSampledBX1 = new TH2D("2DScanSampledBX1", "Efficiency in Sampled mode", (int) DLLRange/DLLStep, DLLStart, DLLStart+DLLRange, (int) vcthRange/vcthStep, vcthStart, vcthStart+vcthRange);
+  TH2D * h_2DScanLatchedBX1 = (TH2D*) h_2DScanSampledBX1->Clone(); h_2DScanLatchedBX1->SetNameTitle("2DScanLatchedBX1", "Efficiency in Latched mode");
+  TH2D * h_2DScanSampledBX2 = (TH2D*) h_2DScanSampledBX1->Clone(); h_2DScanSampledBX2->SetNameTitle("2DScanSampledBX2", "Efficiency in Sampled mode");
+  TH2D * h_2DScanLatchedBX2 = (TH2D*) h_2DScanSampledBX1->Clone(); h_2DScanLatchedBX2->SetNameTitle("2DScanLatchedBX2", "Efficiency in Latched mode");
+  TH2D * h_2DScanSampledBX3 = (TH2D*) h_2DScanSampledBX1->Clone(); h_2DScanSampledBX3->SetNameTitle("2DScanSampledBX3", "Efficiency in Sampled mode");
+  TH2D * h_2DScanLatchedBX3 = (TH2D*) h_2DScanSampledBX1->Clone(); h_2DScanLatchedBX3->SetNameTitle("2DScanLatchedBX3", "Efficiency in Latched mode");
+
+  if (do2DScanFast) {
+    cout<<"2D scan Fast: "<<flush;
+    for (int j = 0; j <= DLLRange; j += DLLStep) {
+      DLL = DLLStart + j;
+      int DLLbin = h_2DScanSampledBX1->GetXaxis()->FindBin(DLL+0.01);
+      cout<<DLL<<" "<<flush;
+      TH3D* h3_vcthScan = RunVcthScan ( TwoDDirFast, vcthStart,  vcthStep,  vcthRange);
+      for (int ibin = 1; ibin <= 5; ibin++ ) {
+        for (int jbin = 1; jbin <= Nck; jbin++ ) {
+          h3_vcthScan->GetYaxis()->SetRange(ibin, ibin);
+          h3_vcthScan->GetZaxis()->SetRange(jbin, jbin);
+          TH1D * h_vcthScan = (TH1D*) h3_vcthScan->Project3D("x");
+          for (int kbin = 1; kbin <= h_vcthScan->GetXaxis()->GetNbins(); kbin++ ) {
+            double vcth = h_vcthScan->GetXaxis()->GetBinCenter(kbin);
+            if (ibin==1 && jbin==2) h_2DScanSampledBX1->Fill( DLL, vcth, h_vcthScan->GetBinContent(kbin));
+            if (ibin==1 && jbin==3) h_2DScanSampledBX2->Fill( DLL, vcth, h_vcthScan->GetBinContent(kbin));
+            if (ibin==1 && jbin==4) h_2DScanSampledBX3->Fill( DLL, vcth, h_vcthScan->GetBinContent(kbin));                        
+            if (ibin==2 && jbin==2) h_2DScanLatchedBX1->Fill( DLL, vcth, h_vcthScan->GetBinContent(kbin));
+            if (ibin==2 && jbin==3) h_2DScanLatchedBX2->Fill( DLL, vcth, h_vcthScan->GetBinContent(kbin));
+            if (ibin==2 && jbin==4) h_2DScanLatchedBX3->Fill( DLL, vcth, h_vcthScan->GetBinContent(kbin)); 
+          }
+          delete h_vcthScan;
+        }
+      }
+    } // loop over DLL values
+   TwoDDirFast->cd();
+   h_2DScanSampledBX1->Write(); 
+   h_2DScanLatchedBX1->Write(); 
+   h_2DScanSampledBX2->Write(); 
+   h_2DScanLatchedBX2->Write(); 
+   h_2DScanSampledBX3->Write(); 
+   h_2DScanLatchedBX3->Write(); 
+
+
+
+  } // do 2D scan
+
+
+
 
   // 2D scan
   TDirectory * TwoDDir = f->mkdir("2DScan");
