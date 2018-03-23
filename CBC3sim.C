@@ -14,6 +14,9 @@
 #include "LanGaus.cc"
 
 using namespace std;
+TRandom3 myDice;
+
+TString outname = "TestSim.root"
 
 // Currently see no reason to modify these once they are set
 const int       NEvents = 1000; // Number of events for each RunTest call
@@ -31,6 +34,10 @@ bool      doVcthScan = true;
 bool      doDLLScan = false;
 bool      do2DScan = false;
 bool      do2DScanFast = true;
+
+// Fancy stuff
+bool      doubleHits = false;
+bool      chargeSharing = false;
 
 // best guess at shape of flandau 
 double defLandauPars[3]={1.0, 144 , 9.0};
@@ -58,10 +65,20 @@ double defCbc3PulseShapeParsTheta1p0[5]={0,12.4,-12.,1.0,3};
 // Sarah
 // for the landau :  f->SetParameters(1, 143.652 , 7.09689)
 // for the gaussian noise : f->SetParameters(1, 0.266, 17.4744)
+
+// No Charge Sharing from Data
 double LandauMPV = 143.652;
 double LandauWidth = 7.09689;
 double GaussianPedestal = 0.266;
 double GaussianWidth = 17.4744;
+
+// Charge Sharing from Data
+// double LandauMPV = 137.98;
+// double LandauWidth = 7.93;
+// double GaussianPedestal = 0.266;
+// double GaussianWidth = 21.65;
+
+
 double defLanGausPars[4] = {LandauMPV, LandauWidth, GaussianWidth, 1.};
 
 // first guess at more realistic CBC3 pulse shape
@@ -348,11 +365,19 @@ TF1 * Function_PulseShape(float charge, double* pars, TString pFuncName="f1", do
 }
 
 float Step0_GetCharge( TF1* f) {
-  // Return fC (based on Landau*Gaussian)
-  float charge = 2.5; // 1 MIP ~ 2.5 fC (But this is not used?)
-  charge = f->GetRandom(); // (Now charge is in Vcth again)
+  float charge = f->GetRandom(); 
   return charge; 
 }
+
+float Step0_GetChargeWithChargeSharing( TF1* f) {
+  float charge = f->GetRandom(); 
+  double frac = 1;
+  if (myDice.Uniform(0, 50) > 10) // charge sharing region
+    frac = myDice.Uniform(0.5,1);
+//  cout<< "Charge before/after sharing: "<<charge<<"/"<<charge*frac<<". Frac "<<frac<<endl;
+  return charge*frac; 
+}
+
 
 float Step0_GetNoise( TF1* f) {
   // Return fC (based on Landau*Gaussian)
@@ -651,7 +676,7 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
 
 
 // Function just runs digital logic, given a pulse shape
-void RunDigitalLogicOneEvent (TH2D * h_sumHits, TF1 * shape) {
+void RunDigitalLogicOneEvent (TH2D * h_sumHits, TF1 * shape, TF1 * shape2) {
 
   h_sumHits->Reset();
   // Internal counters
@@ -686,7 +711,10 @@ void RunDigitalLogicOneEvent (TH2D * h_sumHits, TF1 * shape) {
 
       int coarsePlusFineTime = ins + ick*25;
 
-      float voltage = Step1_PreampShaper( coarsePlusFineTime, shape );
+      float voltage = 0;
+      if (!doubleHits) voltage = Step1_PreampShaper( coarsePlusFineTime, shape );
+      else voltage = Step1_PreampShaperDoubleHit( coarsePlusFineTime, shape, shape2 );
+
       bool comp = Step2_Comparator( voltage, Vcth );
 
       if ( !foundSampledHitThisClock ) foundSampledHitThisClock = Step3_HitDetectSampled( comp, ins );
@@ -737,15 +765,20 @@ TH3D* RunVcthScan (TDirectory * f, int vcthStart, int vcthStep, int vcthRange) {
     if (verbose>=1) cout<<"New Event"<<endl;
 
     // Get the charge randomly from the landau
-    float charge = Step0_GetCharge(landau); 
-    //float charge2 = Step0_GetCharge(landau); 
+    float charge = 0, charge2 = 0;
 
-    // Add a random noise to the charge
-    //charge += Step0_GetNoise(noise);
-    //charge2 += Step0_GetNoise(noise);
+    if (!chargeSharing) {
+      charge  = Step0_GetCharge(landau); 
+      charge2 = Step0_GetCharge(landau); 
+    }
+    else {
+      charge  = Step0_GetChargeWithChargeSharing(landau);
+      charge2 = Step0_GetChargeWithChargeSharing(landau);      
+    }
 
     TF1 * shape  = Function_PulseShapeCBC3_fast(charge,defCbc3PulseShapePars);
-    //TF1 * shape2 = (TF1*) shape->Clone("shape2"); // If not using double hits, avoid calculating another shape
+    TF1 * shape2 = (TF1*) shape->Clone("shape2"); // If not using double hits, avoid calculating another shape
+    if (doubleHits) shape2  = Function_PulseShapeCBC3_fast(charge2,defCbc3PulseShapePars);
 
     // We have a random charge and a well-defined shape. Now we could abstract the digital logic into a separate function, 
     // and run it as many times as we want, as long as we don't want to change the pulse shape (with beta or DLL)
@@ -753,7 +786,7 @@ TH3D* RunVcthScan (TDirectory * f, int vcthStart, int vcthStep, int vcthRange) {
       Vcth = vcthStart + i;
       int vcthBin = h3_vcthScan->GetXaxis()->FindBin(Vcth+0.01);
 
-      RunDigitalLogicOneEvent (h_sumHits, shape);
+      RunDigitalLogicOneEvent (h_sumHits, shape, shape2);
       f->cd();
       for (int ibin = 1; ibin <= 5; ibin++ ) {
         for (int jbin = 1; jbin <= Nck; jbin++ ) {
@@ -772,7 +805,7 @@ TH3D* RunVcthScan (TDirectory * f, int vcthStart, int vcthStep, int vcthRange) {
 
 void CBC3sim () {
 
-  TFile * f = new TFile("TestSim.root", "RECREATE");
+  TFile * f = new TFile(outname.Data(), "RECREATE");
   f->cd();
 
   // Threshold scan
@@ -878,6 +911,10 @@ void CBC3sim () {
   TH2D * h_2DScanSampledBX3 = (TH2D*) h_2DScanSampledBX1->Clone(); h_2DScanSampledBX3->SetNameTitle("2DScanSampledBX3", "Efficiency in Sampled mode");
   TH2D * h_2DScanLatchedBX3 = (TH2D*) h_2DScanSampledBX1->Clone(); h_2DScanLatchedBX3->SetNameTitle("2DScanLatchedBX3", "Efficiency in Latched mode");
 
+  TH2D * h_2DScanORBX1 = (TH2D*) h_2DScanSampledBX1->Clone(); h_2DScanORBX1->SetNameTitle("2DScanORBX1", "Efficiency in OR mode");
+  TH2D * h_2DScanORBX2 = (TH2D*) h_2DScanSampledBX1->Clone(); h_2DScanORBX2->SetNameTitle("2DScanORBX2", "Efficiency in OR mode");
+  TH2D * h_2DScanORBX3 = (TH2D*) h_2DScanSampledBX1->Clone(); h_2DScanORBX3->SetNameTitle("2DScanORBX3", "Efficiency in OR mode");
+
   if (do2DScanFast) {
     cout<<"2D scan Fast: "<<flush;
     for (int j = 0; j <= DLLRange; j += DLLStep) {
@@ -898,6 +935,9 @@ void CBC3sim () {
             if (ibin==2 && jbin==2) h_2DScanLatchedBX1->Fill( DLL, vcth, h_vcthScan->GetBinContent(kbin));
             if (ibin==2 && jbin==3) h_2DScanLatchedBX2->Fill( DLL, vcth, h_vcthScan->GetBinContent(kbin));
             if (ibin==2 && jbin==4) h_2DScanLatchedBX3->Fill( DLL, vcth, h_vcthScan->GetBinContent(kbin)); 
+            if (ibin==3 && jbin==2) h_2DScanORBX1->Fill( DLL, vcth, h_vcthScan->GetBinContent(kbin));
+            if (ibin==3 && jbin==3) h_2DScanORBX2->Fill( DLL, vcth, h_vcthScan->GetBinContent(kbin));
+            if (ibin==3 && jbin==4) h_2DScanORBX3->Fill( DLL, vcth, h_vcthScan->GetBinContent(kbin)); 
           }
           delete h_vcthScan;
         }
@@ -910,6 +950,9 @@ void CBC3sim () {
    h_2DScanLatchedBX2->Write(); 
    h_2DScanSampledBX3->Write(); 
    h_2DScanLatchedBX3->Write(); 
+   h_2DScanORBX1->Write(); 
+   h_2DScanORBX2->Write(); 
+   h_2DScanORBX3->Write(); 
 
 
 
