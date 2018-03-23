@@ -80,7 +80,7 @@ double fLanGausIntegral(double x , double* par)
     //int nIntegrationPoints=par[4];
 
     double xMin = x;
-    double xMax = 1*rIntegral*mpc;
+    double xMax = rIntegral;
     double convolutionParameters[5]={mpc,sigmaLandau,sigmaGaus,5};//{mpc,sigmaLandau,sigmaGaus,10,500};
     TF1 f("lanGaussIntegral",LanGausConvolution , xMin , xMax,4);
     f.SetParameters(convolutionParameters);
@@ -110,7 +110,7 @@ double detResponse(double* x , double* par)
     double mpc = par[0];
     double sigmaLandau = par[1];
     double sigmaGaus = par[2];
-    double rIntegral=5;
+    double rIntegral=500;
     double cNorm=par[3];
 
     double parametersLanGaus[4]={mpc,sigmaLandau,sigmaGaus,rIntegral};
