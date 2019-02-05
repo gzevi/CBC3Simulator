@@ -16,15 +16,15 @@
 using namespace std;
 TRandom3 myDice;
 
-TString outname = "TestSim.root"
+TString outname = "TestSim.root";
 
 // Currently see no reason to modify these once they are set
-const int       NEvents = 1000; // Number of events for each RunTest call
-const int       Nck = 5; // Number of clock cycles
-const int       HipSuppress = 1; // 0 means don't suppress
+const int NEvents = 1000; // Number of events for each RunTest call
+const int Nck = 5; // Number of clock cycles
+const int HipSuppress = 1; // 0 means don't suppress
 
 // Knobs that are overwritten when performing scans
-int       Vcth = 20; // DAC units, already pedestal-subtracted
+int       Vcth = 0; // DAC units, already pedestal-subtracted
 int       DLL = 10; // DLL delay. If DLL=0, signal pulse starts at t=0. If DLL=10, it starts at 10
 
 // Verbosity etc
@@ -33,21 +33,22 @@ bool      diagnosticHistograms = false; // Make histograms for every event (redu
 bool      doVcthScan = true;
 bool      doDLLScan = false;
 bool      do2DScan = false;
-bool      do2DScanFast = true;
+bool      do2DScanFast = false;
 
 // Fancy stuff
 bool      doubleHits = false;
-bool      chargeSharing = false;
+bool      chargeSharing = true;
+bool      doMIP = false;             // This is to simulate a beam test. If you want to simulate a lab test you need to set this to false.
 
 // best guess at shape of flandau 
-double defLandauPars[3]={1.0, 144 , 9.0};
-double defPulseShapePars[4]={3, 4, 1, 0.0};
-double defCbc3PulseShapePars[5]={0,12.4,-12.,0.79,3};
-// Vary 3rd parameter as a proxy for Beta
-double defCbc3PulseShapeParsTheta0p1[5]={0,12.4,-12.,0.1,3};
-double defCbc3PulseShapeParsTheta0p5[5]={0,12.4,-12.,0.5,3};
-double defCbc3PulseShapeParsTheta1p0[5]={0,12.4,-12.,1.0,3};
+double    defLandauPars[3]={1.0, 144 , 9.0};
+double    defPulseShapePars[4]={3, 4, 1, 0.0};
+double    defCbc3PulseShapePars[5]={0,12.4,-12.,0.79,3};
 
+// Vary 3rd parameter as a proxy for Beta
+double    defCbc3PulseShapeParsTheta0p1[5]={0,12.4,-12.,0.1,3};
+double    defCbc3PulseShapeParsTheta0p5[5]={0,12.4,-12.,0.5,3};
+double    defCbc3PulseShapeParsTheta1p0[5]={0,12.4,-12.,1.0,3};
 
 //////////// Some useful numbers: /////////////////
 // 1 Vcth ~ 130 electrons
@@ -72,12 +73,13 @@ double LandauWidth = 7.09689;
 double GaussianPedestal = 0.266;
 double GaussianWidth = 17.4744;
 
+double gammaSignal = 128.2;
+
 // Charge Sharing from Data
 // double LandauMPV = 137.98;
 // double LandauWidth = 7.93;
 // double GaussianPedestal = 0.266;
 // double GaussianWidth = 21.65;
-
 
 double defLanGausPars[4] = {LandauMPV, LandauWidth, GaussianWidth, 1.};
 
@@ -104,7 +106,6 @@ double cbc3PulseSimple(double x , double* par)
   if( xx  < 0 )
      return 0.;
   
-
   double c = std::cos(theta);
   double s = std::sin(theta);
   double angTerm1 = c + s ;
@@ -233,9 +234,6 @@ TF1* Function_PulseShapeCBC3(double charge, double* pars=defCbc3PulseShapePars, 
   return f;
 }
 
-
-
-
 TF1 *gaussianNoise(double ped = GaussianPedestal, double width = GaussianWidth) {
   // Use a gaussian around 0 (pedestal subtracted) with a noise of 6 Vcth
   // f(x) = p0*exp(-0.5*((x-p1)/p2)^2)
@@ -254,6 +252,7 @@ double StepFunction(double* x , double *par)
 
   return 0.5*(TMath::Erf((x0-tStart)/(sqrt(2.)*riseTime)) - TMath::Erf((x0-tStop)/(sqrt(2.)*riseTime)));
 }
+
 TF1 * Function_Comparator(double* pars, TString pFuncName="f", double pXmin=0,double pXmax=300) 
 {
   // Currently using a Landau in Vcth units, but could use fC and then scale the PreampShaper output
@@ -332,7 +331,6 @@ TF1 * Function_LanGaus(double* pars = defLanGausPars) {
   return f;
 }
 
-
 double Function_RC(double *x, double *par) {
 
   double N = par[0];
@@ -346,7 +344,6 @@ double Function_RC(double *x, double *par) {
   return result;
 
 }
-
 
 TF1 * Function_PulseShape(float charge, double* pars, TString pFuncName="f1", double pXmin=-25 , double pXmax=(Nck-1)*25) {
   // TF1* f = new TF1("f1", "gaus", 0, Nck*25);
@@ -378,6 +375,14 @@ float Step0_GetChargeWithChargeSharing( TF1* f) {
   return charge*frac; 
 }
 
+float Step0_GetGammaCharge (double amplitude) {
+  // The signals are in Vcth here
+  double fractionLeft;
+  if (chargeSharing) fractionLeft = myDice.Rndm();
+  else fractionLeft = 1;     
+
+  return amplitude * fractionLeft;
+}
 
 float Step0_GetNoise( TF1* f) {
   // Return fC (based on Landau*Gaussian)
@@ -506,12 +511,22 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
     }
 
     // Get the charge randomly from the landau
-    float charge = Step0_GetCharge(landau); 
-    float charge2 = Step0_GetCharge(landau); 
-
-    // Add a random noise to the charge
-    //charge += Step0_GetNoise(noise);
-    //charge2 += Step0_GetNoise(noise);
+    float charge = 0., charge2 = 0.;
+    if (doMIP) {
+      charge = Step0_GetCharge(landau); 
+      charge2 = Step0_GetCharge(landau);
+    } else {
+      charge = Step0_GetGammaCharge(gammaSignal); 
+      charge2 = Step0_GetGammaCharge(gammaSignal);
+    }
+ 
+    // Add a random noise to the charge, only in case we have a gamma signal (it's already added to the langaus)
+    if (!doMIP) {
+      charge += Step0_GetNoise(noise);
+      charge2 += Step0_GetNoise(noise);
+    }
+    
+    // Fill the charge histogram
     h_charge->Fill(charge);
 
     // Pulse shape function defined right after charge is known
@@ -626,10 +641,7 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
           if (countORHIPHits>0)       h_sumHitsInTwoClocks->Fill(5);
           else h_sumHitsInEitherClocks->Fill(5);
         } 
-
       }
-
-
     } // End of clock
 
     if (verbose>=1) cout<<"End of event: ";    
@@ -669,11 +681,9 @@ vector<TH1D*> RunTest (TDirectory * f, TString dirName) {
   v_h_sumHits.push_back(h_sumHitsInTwoClocks);
   v_h_sumHits.push_back(h_sumHitsInEitherClocks);
 
-
   return v_h_sumHits;
 
 } // End of RunTest
-
 
 // Function just runs digital logic, given a pulse shape
 void RunDigitalLogicOneEvent (TH2D * h_sumHits, TF1 * shape, TF1 * shape2) {
@@ -743,7 +753,6 @@ void RunDigitalLogicOneEvent (TH2D * h_sumHits, TF1 * shape, TF1 * shape2) {
     if (verbose>=2) cout<<"CK\tSampled\tLatched\tOR   SampledHIP\tORHIP  [LatchedNextCock]"<<endl;
     if (verbose>=2) cout<<ick<<" \t "<<foundSampledHitThisClock<<" \t "<<foundLatchedHitThisClock<<" \t "<<foundORHit<<" \t "<<foundSampledHitHIP<<" \t "<<foundORHitHIP<<" \t "<<foundLatchedHitNextClock << endl;
 
-
   } // End of clock
 
   //h_sumHits->Scale(1./NEvents);
@@ -752,13 +761,11 @@ void RunDigitalLogicOneEvent (TH2D * h_sumHits, TF1 * shape, TF1 * shape2) {
 
 } // End of RunDigitalLogicOneEvent
 
-
 TH3D* RunVcthScan (TDirectory * f, int vcthStart, int vcthStep, int vcthRange) {
   f->cd();
 
   TH3D * h3_vcthScan = new TH3D(Form("ThresholdScan3D_DLL%i", DLL), "ThresholdScan", (int) vcthRange/vcthStep, vcthStart, vcthStart+vcthRange, 5, 0.5, 5.5, Nck, 0.5, Nck+0.5);
   TH2D * h_sumHits = new TH2D("SumHitsNckVsMode", "SumHitsNckVsMode", 5, 0.5, 5.5, Nck, 0.5, Nck+0.5);
-
 
   // Event looper
   for (int ievent = 0; ievent < NEvents; ievent++) {
@@ -767,13 +774,21 @@ TH3D* RunVcthScan (TDirectory * f, int vcthStart, int vcthStep, int vcthRange) {
     // Get the charge randomly from the landau
     float charge = 0, charge2 = 0;
 
-    if (!chargeSharing) {
-      charge  = Step0_GetCharge(landau); 
-      charge2 = Step0_GetCharge(landau); 
-    }
-    else {
-      charge  = Step0_GetChargeWithChargeSharing(landau);
-      charge2 = Step0_GetChargeWithChargeSharing(landau);      
+    if (doMIP) {
+      if (!chargeSharing) {
+        charge  = Step0_GetCharge(landau); 
+        charge2 = Step0_GetCharge(landau); 
+      } else {
+        charge  = Step0_GetChargeWithChargeSharing(landau);
+        charge2 = Step0_GetChargeWithChargeSharing(landau);      
+      }
+    } else {
+      // First get the signal
+      charge = Step0_GetGammaCharge(gammaSignal); 
+      charge2 = Step0_GetGammaCharge(gammaSignal);
+      // Then add the noise
+      charge += Step0_GetNoise(noise);
+      charge2 += Step0_GetNoise(noise);
     }
 
     TF1 * shape  = Function_PulseShapeCBC3_fast(charge,defCbc3PulseShapePars);
@@ -801,8 +816,6 @@ TH3D* RunVcthScan (TDirectory * f, int vcthStart, int vcthStep, int vcthRange) {
 
 } // End of RunVcthScan
 
-
-
 void CBC3sim () {
 
   TFile * f = new TFile(outname.Data(), "RECREATE");
@@ -812,9 +825,9 @@ void CBC3sim () {
   DLL = 15;
   TDirectory * VcthDir = f->mkdir(Form("ThresholdScan_DLL%i", DLL));
   VcthDir->cd();
-  float vcthStart = 20;
-  float vcthRange = 180;
-  float vcthStep = 2;
+  float vcthStart = 0;
+  float vcthRange = 250;
+  float vcthStep = 1;
   TH2D * h_vcthScan = new TH2D(Form("ThresholdScan_DLL%i", DLL), "ThresholdScan", (int) vcthRange/vcthStep, vcthStart, vcthStart+vcthRange, 5, 0.5, 5.5);
   labelAxis(h_vcthScan->GetYaxis());
   TH2D * h_vcthScanDoubleHits = (TH2D*) h_vcthScan->Clone();
@@ -835,8 +848,8 @@ void CBC3sim () {
   }
 
   // Fast threshold scan
-  vcthStart = 20;
-  vcthRange = 180;
+  vcthStart = 0;
+  vcthRange = 250;
   vcthStep = 2;
   DLL = 15;
   TDirectory * VcthDirFast = f->mkdir(Form("ThresholdScanFast_DLL%i", DLL));
@@ -844,7 +857,7 @@ void CBC3sim () {
   TH2D * h2_vcthScanFast =0;
   if (doVcthScan) {
     cout<<"Running Fast Vcth scan at DLL "<<DLL<<"..."<<endl;
-      VcthDirFast->cd();
+    VcthDirFast->cd();
 
     TH3D* h3_vcthScan = RunVcthScan ( VcthDirFast, vcthStart,  vcthStep,  vcthRange);
     h3_vcthScan->Write();
@@ -861,11 +874,8 @@ void CBC3sim () {
   }
   f->cd();
 
-
-
-
   // Timing scan
-  Vcth = 20; // Reset Vcth to nominal
+  Vcth = 0; // Reset Vcth to nominal
   TDirectory * DLLDir = f->mkdir(Form("DLLScan_Vcth%i", Vcth));
   DLLDir->cd();
   float DLLStart = -25;
@@ -896,13 +906,12 @@ void CBC3sim () {
   // 2D scan fast
   TDirectory * TwoDDirFast = f->mkdir("2DScanFast");
   TwoDDirFast->cd();
-  vcthStart = 20;
-  vcthRange = 180;
+  vcthStart = 0;
+  vcthRange = 250;
   vcthStep = 2;
   DLLStart = -25;
   DLLRange = 75;
   DLLStep = 1;
-
 
   TH2D * h_2DScanSampledBX1 = new TH2D("2DScanSampledBX1", "Efficiency in Sampled mode", (int) DLLRange/DLLStep, DLLStart, DLLStart+DLLRange, (int) vcthRange/vcthStep, vcthStart, vcthStart+vcthRange);
   TH2D * h_2DScanLatchedBX1 = (TH2D*) h_2DScanSampledBX1->Clone(); h_2DScanLatchedBX1->SetNameTitle("2DScanLatchedBX1", "Efficiency in Latched mode");
@@ -952,21 +961,16 @@ void CBC3sim () {
    h_2DScanLatchedBX3->Write(); 
    h_2DScanORBX1->Write(); 
    h_2DScanORBX2->Write(); 
-   h_2DScanORBX3->Write(); 
-
-
+   h_2DScanORBX3->Write();
 
   } // do 2D scan
-
-
-
 
   // 2D scan
   TDirectory * TwoDDir = f->mkdir("2DScan");
   TwoDDir->cd();
 
-  vcthStart = 20;
-  vcthRange = 180;
+  vcthStart = 0;
+  vcthRange = 250;
   vcthStep = 2;
   DLLStart = -25;
   DLLRange = 75;
@@ -992,7 +996,6 @@ void CBC3sim () {
   TH2D * h_2DScanORNextClock = (TH2D*) h_2DScanSampledNextClock->Clone(); h_2DScanORNextClock->SetNameTitle("2DScanORNextClock", "NextClock eff in OR mode");
   TH2D * h_2DScanSampledHIPNextClock = (TH2D*) h_2DScanSampledNextClock->Clone(); h_2DScanSampledHIPNextClock->SetNameTitle("2DScanSampledHIPNextClock", "NextClock eff in Sampled+HIP mode");
   TH2D * h_2DScanORHIPNextClock = (TH2D*) h_2DScanSampledNextClock->Clone(); h_2DScanORHIPNextClock->SetNameTitle("2DScanORHIPNextClock", "NextClock eff in OR+HIP mode");
-
 
   if (do2DScan) {
     cout<<"2D scan: "<<flush;
@@ -1065,8 +1068,5 @@ void CBC3sim () {
   h_2DScanORNextClock->Draw("colz"); c.SaveAs("plots/NextClockOR.pdf");
   h_2DScanSampledHIPNextClock->Draw("colz"); c.SaveAs("plots/NextClockSampledHIP.pdf");
   h_2DScanORHIPNextClock->Draw("colz"); c.SaveAs("plots/NextClockORHIP.pdf");
-
-
-
 
 }

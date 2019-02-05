@@ -3,4 +3,4 @@
 *.pcm
 *.root
 *.pdf
-rootfiles/
+*/
