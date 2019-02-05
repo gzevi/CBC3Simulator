@@ -19,12 +19,15 @@ TRandom3 myDice;
 TString outname = "TestSim.root";
 
 // Currently see no reason to modify these once they are set
-const int NEvents = 1000; // Number of events for each RunTest call
+const int NEvents = 100000; // Number of events for each RunTest call
 const int Nck = 5; // Number of clock cycles
 const int HipSuppress = 1; // 0 means don't suppress
 
 // Knobs that are overwritten when performing scans
-int       Vcth = 0; // DAC units, already pedestal-subtracted
+int       Vcth = 20; // DAC units, already pedestal-subtracted
+float     startVcth = 0; // DAC units, start value
+float     stopVcth = 250; // DAC units, stop value
+float     stepVcth = 1; // DAC units, step to be taken
 int       DLL = 10; // DLL delay. If DLL=0, signal pulse starts at t=0. If DLL=10, it starts at 10
 
 // Verbosity etc
@@ -825,8 +828,8 @@ void CBC3sim () {
   DLL = 15;
   TDirectory * VcthDir = f->mkdir(Form("ThresholdScan_DLL%i", DLL));
   VcthDir->cd();
-  float vcthStart = 0;
-  float vcthRange = 250;
+  float vcthStart = startVcth;
+  float vcthRange = stopVcth;
   float vcthStep = 1;
   TH2D * h_vcthScan = new TH2D(Form("ThresholdScan_DLL%i", DLL), "ThresholdScan", (int) vcthRange/vcthStep, vcthStart, vcthStart+vcthRange, 5, 0.5, 5.5);
   labelAxis(h_vcthScan->GetYaxis());
@@ -848,9 +851,9 @@ void CBC3sim () {
   }
 
   // Fast threshold scan
-  vcthStart = 0;
-  vcthRange = 250;
-  vcthStep = 2;
+  vcthStart = startVcth;
+  vcthRange = stopVcth;
+  vcthStep = stepVcth;
   DLL = 15;
   TDirectory * VcthDirFast = f->mkdir(Form("ThresholdScanFast_DLL%i", DLL));
   VcthDirFast->cd();
@@ -906,9 +909,9 @@ void CBC3sim () {
   // 2D scan fast
   TDirectory * TwoDDirFast = f->mkdir("2DScanFast");
   TwoDDirFast->cd();
-  vcthStart = 0;
-  vcthRange = 250;
-  vcthStep = 2;
+  vcthStart = startVcth;
+  vcthRange = stopVcth;
+  vcthStep = stepVcth;
   DLLStart = -25;
   DLLRange = 75;
   DLLStep = 1;
@@ -969,9 +972,9 @@ void CBC3sim () {
   TDirectory * TwoDDir = f->mkdir("2DScan");
   TwoDDir->cd();
 
-  vcthStart = 0;
-  vcthRange = 250;
-  vcthStep = 2;
+  vcthStart = startVcth;
+  vcthRange = stopVcth;
+  vcthStep = stepVcth;
   DLLStart = -25;
   DLLRange = 75;
   DLLStep = 1;
