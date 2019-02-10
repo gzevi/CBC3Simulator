@@ -16,26 +16,26 @@
 using namespace std;
 TRandom3 myDice;
 
-TString outname = "TestSim.root";
+TString outname = "TestSim_2.root";
 
 // Currently see no reason to modify these once they are set
-const int NEvents = 100000; // Number of events for each RunTest call
+const int NEvents = 10000; // Number of events for each RunTest call
 const int Nck = 5; // Number of clock cycles
 const int HipSuppress = 1; // 0 means don't suppress
 
 // Knobs that are overwritten when performing scans
 int       Vcth = 20; // DAC units, already pedestal-subtracted
 float     startVcth = 0; // DAC units, start value
-float     stopVcth = 250; // DAC units, stop value
-float     stepVcth = 1; // DAC units, step to be taken
+float     stopVcth = 200; // DAC units, stop value
+float     stepVcth = 2; // DAC units, step to be taken
 int       DLL = 10; // DLL delay. If DLL=0, signal pulse starts at t=0. If DLL=10, it starts at 10
 
 // Verbosity etc
 int       verbose = 0; // 0: none, 1: every event, 2: every clock, 3: every ns
 bool      diagnosticHistograms = false; // Make histograms for every event (reduce NEvents to avoid slowing down)
 bool      doVcthScan = true;
-bool      doDLLScan = false;
-bool      do2DScan = false;
+bool      doDLLScan = true;
+bool      do2DScan = true;
 bool      do2DScanFast = false;
 
 // Fancy stuff
@@ -381,7 +381,10 @@ float Step0_GetChargeWithChargeSharing( TF1* f) {
 float Step0_GetGammaCharge (double amplitude) {
   // The signals are in Vcth here
   double fractionLeft;
-  if (chargeSharing) fractionLeft = myDice.Rndm();
+  if (chargeSharing) {
+    if (myDice.Uniform(0, 50) > 10) // charge sharing region
+      fractionLeft = myDice.Uniform(0.5,1);
+  } 
   else fractionLeft = 1;     
 
   return amplitude * fractionLeft;
@@ -830,7 +833,7 @@ void CBC3sim () {
   VcthDir->cd();
   float vcthStart = startVcth;
   float vcthRange = stopVcth;
-  float vcthStep = 1;
+  float vcthStep = stepVcth;
   TH2D * h_vcthScan = new TH2D(Form("ThresholdScan_DLL%i", DLL), "ThresholdScan", (int) vcthRange/vcthStep, vcthStart, vcthStart+vcthRange, 5, 0.5, 5.5);
   labelAxis(h_vcthScan->GetYaxis());
   TH2D * h_vcthScanDoubleHits = (TH2D*) h_vcthScan->Clone();
